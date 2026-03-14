@@ -1,5 +1,5 @@
 using ProcessadorDiagramas.APIGatewayService.Domain.Enums;
-
+//Testando commit
 namespace ProcessadorDiagramas.APIGatewayService.Domain.Entities;
 
 public sealed class DiagramRequest
