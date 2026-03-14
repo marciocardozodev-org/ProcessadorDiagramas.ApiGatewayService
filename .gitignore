@@ -1,0 +1,23 @@
+# Build outputs
+bin/
+obj/
+
+# User-specific files
+*.user
+*.rsuser
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE folders
+.vs/
+.vscode/
+
+# Test artifacts
+TestResults/
+*.trx
+coverage/
+
+# OS files
+.DS_Store
+Thumbs.db

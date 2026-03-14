@@ -1,0 +1,80 @@
+version: "3.9"
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: processador_diagramas_api
+    ports:
+      - "5000:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=processador_diagramas;Username=postgres;Password=postgres
+      - Aws__Region=us-east-1
+      - Aws__TopicArn=arn:aws:sns:us-east-1:000000000000:diagram-requests
+      - Aws__QueueUrl=http://localstack:4566/000000000000/diagram-events
+      - Aws__ServiceURL=http://localstack:4566
+      - ReportService__BaseUrl=http://report-service:8080
+      - ReportService__GetReportPathTemplate=/api/reports/{analysisId}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      localstack:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: processador_diagramas_postgres
+    environment:
+      POSTGRES_DB: processador_diagramas
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  localstack:
+    image: localstack/localstack:3
+    container_name: processador_diagramas_localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=sns,sqs
+      - DEFAULT_REGION=us-east-1
+    volumes:
+      - localstack_data:/var/lib/localstack
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:4566/_localstack/health | grep '\"sns\": \"available\"'"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: mcr.microsoft.com/dotnet/sdk:8.0
+    container_name: processador_diagramas_migrate
+    working_dir: /src
+    volumes:
+      - .:/src
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=processador_diagramas;Username=postgres;Password=postgres
+    command: >
+      sh -c "
+        dotnet tool install --global dotnet-ef &&
+        export PATH=\"$$PATH:/root/.dotnet/tools\" &&
+        dotnet ef database update
+          --project src/ProcessadorDiagramas.APIGatewayService/ProcessadorDiagramas.APIGatewayService.csproj
+      "
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  localstack_data:

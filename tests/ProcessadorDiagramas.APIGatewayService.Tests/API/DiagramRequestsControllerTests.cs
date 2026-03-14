@@ -1,0 +1,235 @@
+using FluentAssertions;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Moq;
+using ProcessadorDiagramas.APIGatewayService.API.Controllers;
+using ProcessadorDiagramas.APIGatewayService.API.DTOs;
+using ProcessadorDiagramas.APIGatewayService.Application.Commands.CreateDiagramRequest;
+using ProcessadorDiagramas.APIGatewayService.Application.Interfaces;
+using ProcessadorDiagramas.APIGatewayService.Application.Queries.GetAnalysisReport;
+using ProcessadorDiagramas.APIGatewayService.Application.Queries.GetDiagramRequest;
+using ProcessadorDiagramas.APIGatewayService.Infrastructure.Data;
+using ProcessadorDiagramas.APIGatewayService.Outbox;
+using ProcessadorDiagramas.APIGatewayService.Domain.Entities;
+using ProcessadorDiagramas.APIGatewayService.Domain.Enums;
+using ProcessadorDiagramas.APIGatewayService.Domain.Interfaces;
+
+namespace ProcessadorDiagramas.APIGatewayService.Tests.API;
+
+public sealed class DiagramRequestsControllerTests
+{
+    [Fact]
+    public async Task Create_ValidMultipartUpload_ReturnsCreatedAndPersistsMetadata()
+    {
+        var repositoryMock = new Mock<IDiagramRequestRepository>();
+        var outboxRepositoryMock = new Mock<IOutboxRepository>();
+        var reportClientMock = new Mock<IReportServiceClient>();
+        var fileStorageMock = new Mock<IDiagramFileStorage>();
+
+        DiagramRequest? capturedRequest = null;
+
+        repositoryMock
+            .Setup(r => r.AddAsync(It.IsAny<DiagramRequest>(), It.IsAny<CancellationToken>()))
+            .Callback<DiagramRequest, CancellationToken>((request, _) => capturedRequest = request)
+            .Returns(Task.CompletedTask);
+
+        outboxRepositoryMock
+            .Setup(r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        fileStorageMock
+            .Setup(s => s.SaveAsync(It.IsAny<Stream>(), "architecture.png", "image/png", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StoredDiagramFile(
+                "/tmp/uploads/architecture-uploaded.png",
+                "architecture.png",
+                1024,
+                "image/png"));
+
+        using var dbContext = BuildInMemoryDbContext();
+        var createHandler = new CreateDiagramRequestCommandHandler(
+            repositoryMock.Object,
+            new OutboxPublisher(outboxRepositoryMock.Object),
+            dbContext);
+
+        var statusHandler = new GetDiagramRequestQueryHandler(repositoryMock.Object);
+        var reportHandler = new GetAnalysisReportQueryHandler(repositoryMock.Object, reportClientMock.Object);
+
+        var controller = new DiagramRequestsController(
+            createHandler,
+            statusHandler,
+            reportHandler,
+            fileStorageMock.Object);
+
+        using var fileContent = new MemoryStream(new byte[1024]);
+        var formFile = new FormFile(fileContent, 0, fileContent.Length, "file", "architecture.png")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "image/png"
+        };
+
+        var dto = new CreateDiagramRequestDto
+        {
+            File = formFile,
+            Name = "Architecture V1",
+            Description = "Initial architecture diagram"
+        };
+
+        var response = await controller.Create(dto, CancellationToken.None);
+
+        response.Should().BeOfType<CreatedAtActionResult>();
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.FileName.Should().Be("architecture.png");
+        capturedRequest.FileSize.Should().Be(1024);
+        capturedRequest.ContentType.Should().Be("image/png");
+        capturedRequest.StoragePath.Should().Be("/tmp/uploads/architecture-uploaded.png");
+        capturedRequest.Name.Should().Be("Architecture V1");
+        capturedRequest.Description.Should().Be("Initial architecture diagram");
+        capturedRequest.Status.Should().Be(DiagramStatus.Received);
+
+        fileStorageMock.Verify(
+            s => s.SaveAsync(It.IsAny<Stream>(), "architecture.png", "image/png", It.IsAny<CancellationToken>()),
+            Times.Once);
+
+        outboxRepositoryMock.Verify(
+            r => r.AddAsync(It.IsAny<OutboxMessage>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Create_UnsupportedContentType_ReturnsBadRequest()
+    {
+        var repositoryMock = new Mock<IDiagramRequestRepository>();
+        var reportClientMock = new Mock<IReportServiceClient>();
+        var fileStorageMock = new Mock<IDiagramFileStorage>();
+
+        var controller = BuildGetOnlyController(repositoryMock.Object, reportClientMock.Object, fileStorageMock.Object);
+
+        using var fileContent = new MemoryStream(new byte[128]);
+        var formFile = new FormFile(fileContent, 0, fileContent.Length, "file", "notes.txt")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "text/plain"
+        };
+
+        var dto = new CreateDiagramRequestDto { File = formFile };
+
+        var response = await controller.Create(dto, CancellationToken.None);
+
+        response.Should().BeOfType<BadRequestObjectResult>();
+        fileStorageMock.Verify(
+            s => s.SaveAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task GetById_ExistingRequest_ReturnsOk()
+    {
+        var repositoryMock = new Mock<IDiagramRequestRepository>();
+        var reportClientMock = new Mock<IReportServiceClient>();
+        var fileStorageMock = new Mock<IDiagramFileStorage>();
+
+        var request = DiagramRequest.Create("graph TD; A-->B;", DiagramFormat.Mermaid);
+        repositoryMock
+            .Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+
+        var controller = BuildGetOnlyController(repositoryMock.Object, reportClientMock.Object, fileStorageMock.Object);
+
+        var response = await controller.GetById(request.Id, CancellationToken.None);
+
+        response.Should().BeOfType<OkObjectResult>();
+        var payload = ((OkObjectResult)response).Value;
+        payload.Should().BeOfType<AnalysisStatusResponse>();
+    }
+
+    [Fact]
+    public async Task GetById_MissingRequest_ReturnsNotFound()
+    {
+        var repositoryMock = new Mock<IDiagramRequestRepository>();
+        var reportClientMock = new Mock<IReportServiceClient>();
+        var fileStorageMock = new Mock<IDiagramFileStorage>();
+
+        repositoryMock
+            .Setup(r => r.GetByIdAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((DiagramRequest?)null);
+
+        var controller = BuildGetOnlyController(repositoryMock.Object, reportClientMock.Object, fileStorageMock.Object);
+
+        var response = await controller.GetById(Guid.NewGuid(), CancellationToken.None);
+
+        response.Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
+    public async Task GetReport_AnalysisNotReady_ReturnsConflict()
+    {
+        var repositoryMock = new Mock<IDiagramRequestRepository>();
+        var reportClientMock = new Mock<IReportServiceClient>();
+        var fileStorageMock = new Mock<IDiagramFileStorage>();
+
+        var request = DiagramRequest.Create("@startuml\nA->B\n@enduml", DiagramFormat.PlantUML);
+        repositoryMock
+            .Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+
+        var controller = BuildGetOnlyController(repositoryMock.Object, reportClientMock.Object, fileStorageMock.Object);
+
+        var response = await controller.GetReport(request.Id, CancellationToken.None);
+
+        response.Should().BeOfType<ConflictObjectResult>();
+    }
+
+    [Fact]
+    public async Task GetReport_AnalyzedRequest_ReturnsOk()
+    {
+        var repositoryMock = new Mock<IDiagramRequestRepository>();
+        var reportClientMock = new Mock<IReportServiceClient>();
+        var fileStorageMock = new Mock<IDiagramFileStorage>();
+
+        var request = DiagramRequest.Create("graph TD; A-->B;", DiagramFormat.Mermaid);
+        request.MarkAsProcessing();
+        request.MarkAsAnalyzed("https://reports.local/fallback");
+
+        repositoryMock
+            .Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+
+        reportClientMock
+            .Setup(r => r.GetReportAsync(request.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new TechnicalReportDto(
+                request.Id,
+                "Final report",
+                "Everything looks good",
+                DateTime.UtcNow,
+                "https://reports.local/final"));
+
+        var controller = BuildGetOnlyController(repositoryMock.Object, reportClientMock.Object, fileStorageMock.Object);
+
+        var response = await controller.GetReport(request.Id, CancellationToken.None);
+
+        response.Should().BeOfType<OkObjectResult>();
+        var payload = ((OkObjectResult)response).Value;
+        payload.Should().BeOfType<AnalysisReportResponse>();
+    }
+
+    private static DiagramRequestsController BuildGetOnlyController(
+        IDiagramRequestRepository repository,
+        IReportServiceClient reportServiceClient,
+        IDiagramFileStorage fileStorage)
+    {
+        var statusHandler = new GetDiagramRequestQueryHandler(repository);
+        var reportHandler = new GetAnalysisReportQueryHandler(repository, reportServiceClient);
+
+        return new DiagramRequestsController(null!, statusHandler, reportHandler, fileStorage);
+    }
+
+    private static AppDbContext BuildInMemoryDbContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+
+        return new AppDbContext(options);
+    }
+}
