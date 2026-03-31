@@ -77,7 +77,7 @@ dotnet run
 dotnet test
 ```
 
-Saida esperada: **31 testes passando, 0 falhas.**
+Saida esperada: **33 testes passando, 0 falhas.**
 
 ---
 
@@ -92,6 +92,8 @@ Regras:
 - Campo opcional: description
 - Tipos aceitos: image/* e application/pdf
 - Tamanho maximo: 10MB
+- Storage temporario MVP: UploadStorage__RootPath, com padrao em /tmp/uploads
+- Metadados persistidos na requisicao: fileName, fileSize, contentType e storagePath
 
 ```bash
 curl -X POST "http://localhost:5000/api/diagrams" \
@@ -191,5 +193,6 @@ src/ProcessadorDiagramas.APIGatewayService/
 tests/ProcessadorDiagramas.APIGatewayService.Tests/
   Domain/        Testes de regras de dominio
   Application/   Testes do command handler
+  API/           Testes do controller e fluxo de upload multipart
   EventHandlers/ Testes do event handler
 ```
