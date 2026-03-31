@@ -2,6 +2,8 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using ProcessadorDiagramas.APIGatewayService.API.Controllers;
 using ProcessadorDiagramas.APIGatewayService.API.DTOs;
@@ -14,6 +16,8 @@ using ProcessadorDiagramas.APIGatewayService.Outbox;
 using ProcessadorDiagramas.APIGatewayService.Domain.Entities;
 using ProcessadorDiagramas.APIGatewayService.Domain.Enums;
 using ProcessadorDiagramas.APIGatewayService.Domain.Interfaces;
+using ProcessadorDiagramas.APIGatewayService.Infrastructure.Data.Repositories;
+using ProcessadorDiagramas.APIGatewayService.Infrastructure.Storage;
 
 namespace ProcessadorDiagramas.APIGatewayService.Tests.API;
 
@@ -97,6 +101,32 @@ public sealed class DiagramRequestsControllerTests
     }
 
     [Fact]
+    public async Task Create_FileLargerThan10Mb_ReturnsBadRequest()
+    {
+        var repositoryMock = new Mock<IDiagramRequestRepository>();
+        var reportClientMock = new Mock<IReportServiceClient>();
+        var fileStorageMock = new Mock<IDiagramFileStorage>();
+
+        var controller = BuildGetOnlyController(repositoryMock.Object, reportClientMock.Object, fileStorageMock.Object);
+
+        using var fileContent = new MemoryStream(new byte[(10 * 1024 * 1024) + 1]);
+        var formFile = new FormFile(fileContent, 0, fileContent.Length, "file", "architecture.png")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "image/png"
+        };
+
+        var dto = new CreateDiagramRequestDto { File = formFile };
+
+        var response = await controller.Create(dto, CancellationToken.None);
+
+        response.Should().BeOfType<BadRequestObjectResult>();
+        fileStorageMock.Verify(
+            s => s.SaveAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task Create_UnsupportedContentType_ReturnsBadRequest()
     {
         var repositoryMock = new Mock<IDiagramRequestRepository>();
@@ -120,6 +150,74 @@ public sealed class DiagramRequestsControllerTests
         fileStorageMock.Verify(
             s => s.SaveAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_ValidMultipartUpload_WithLocalStorage_PersistsFileAndOutboxMessage()
+    {
+        var uploadRoot = Path.Combine(Path.GetTempPath(), "diagram-upload-tests", Guid.NewGuid().ToString("N"));
+
+        try
+        {
+            using var dbContext = BuildInMemoryDbContext();
+
+            var repository = new DiagramRequestRepository(dbContext);
+            var outboxRepository = new OutboxRepository(dbContext);
+            var fileStorage = new LocalDiagramFileStorage(
+                Options.Create(new UploadStorageSettings { RootPath = uploadRoot }),
+                NullLogger<LocalDiagramFileStorage>.Instance);
+            var createHandler = new CreateDiagramRequestCommandHandler(
+                repository,
+                new OutboxPublisher(outboxRepository),
+                dbContext);
+            var statusHandler = new GetDiagramRequestQueryHandler(repository);
+            var reportHandler = new GetAnalysisReportQueryHandler(repository, Mock.Of<IReportServiceClient>());
+            var controller = new DiagramRequestsController(createHandler, statusHandler, reportHandler, fileStorage);
+
+            var expectedBytes = new byte[] { 1, 2, 3, 4, 5, 6 };
+            using var fileContent = new MemoryStream(expectedBytes);
+            var formFile = new FormFile(fileContent, 0, fileContent.Length, "file", "architecture.png")
+            {
+                Headers = new HeaderDictionary(),
+                ContentType = "image/png"
+            };
+
+            var dto = new CreateDiagramRequestDto
+            {
+                File = formFile,
+                Name = "Architecture V2",
+                Description = "Uploaded through integration flow"
+            };
+
+            var response = await controller.Create(dto, CancellationToken.None);
+
+            var createdResult = response.Should().BeOfType<CreatedAtActionResult>().Subject;
+            var payload = createdResult.Value.Should().BeOfType<CreateDiagramRequestResponse>().Subject;
+
+            var persistedRequest = await dbContext.DiagramRequests.SingleAsync();
+            var outboxMessage = await dbContext.OutboxMessages.SingleAsync();
+
+            payload.Id.Should().Be(persistedRequest.Id);
+            persistedRequest.FileName.Should().Be("architecture.png");
+            persistedRequest.FileSize.Should().Be(expectedBytes.Length);
+            persistedRequest.ContentType.Should().Be("image/png");
+            persistedRequest.Name.Should().Be("Architecture V2");
+            persistedRequest.Description.Should().Be("Uploaded through integration flow");
+            persistedRequest.StoragePath.Should().NotBeNullOrWhiteSpace();
+            persistedRequest.StoragePath.Should().StartWith(uploadRoot);
+            File.Exists(persistedRequest.StoragePath).Should().BeTrue();
+            (await File.ReadAllBytesAsync(persistedRequest.StoragePath!)).Should().Equal(expectedBytes);
+
+            outboxMessage.EventType.Should().Be("DiagramRequestCreatedEvent");
+            outboxMessage.Payload.Should().Contain("architecture.png");
+            outboxMessage.Payload.Should().Contain("image/png");
+            outboxMessage.Payload.Should().Contain("Architecture V2");
+        }
+        finally
+        {
+            if (Directory.Exists(uploadRoot))
+                Directory.Delete(uploadRoot, recursive: true);
+        }
     }
 
     [Fact]
