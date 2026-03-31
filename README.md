@@ -81,6 +81,41 @@ Saida esperada: **33 testes passando, 0 falhas.**
 
 ---
 
+## CI/CD e deploy
+
+Este repositorio segue o mesmo mecanismo pratico do OficinaCardozo.OSService:
+- GitHub Actions acionado em pull requests e pushes para develop, homolog e master
+- build e testes em todas as PRs do fluxo
+- build e push de imagem Docker quando houver merge em homolog ou master
+- deploy em Kubernetes/EKS apos o merge, com execucao das migrations antes da atualizacao da API
+- banco de dados dedicado para este servico, consumido por secret no pipeline
+
+Arquivos de deploy:
+- .github/workflows/ci-cd.yml
+- deploy/k8s/deployment.yaml
+- deploy/k8s/service.yaml
+- deploy/k8s/create-db-job.yaml
+- infra/terraform/README.md
+
+Secrets esperadas no GitHub:
+- DOCKERHUB_USERNAME
+- DOCKERHUB_TOKEN
+- AWS_ACCESS_KEY_ID
+- AWS_SECRET_ACCESS_KEY
+- AWS_REGION
+- EKS_CLUSTER_NAME
+- CONNECTIONSTRINGS__DEFAULTCONNECTION
+- AWS__TOPICARN
+- AWS__QUEUEURL
+- REPORTSERVICE__BASEURL
+
+Promocao esperada:
+- pull request para develop: valida build e testes
+- merge em homolog: publica imagem e faz deploy no namespace homolog
+- merge em master: publica imagem e faz deploy no namespace production
+
+---
+
 ## Endpoints principais
 
 ### POST /api/diagrams

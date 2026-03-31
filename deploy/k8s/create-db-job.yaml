@@ -1,0 +1,26 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: processador-diagramas-apigatewayservice-migrations
+  labels:
+    app: processador-diagramas-apigatewayservice
+spec:
+  backoffLimit: 1
+  template:
+    metadata:
+      labels:
+        app: processador-diagramas-apigatewayservice
+        job-name: processador-diagramas-apigatewayservice-migrations
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrations
+          image: marciocardozodev/processador-diagramas-apigatewayservice:${IMAGE_TAG}
+          imagePullPolicy: Always
+          envFrom:
+            - secretRef:
+                name: processador-diagramas-apigatewayservice-secrets
+          command:
+            - /bin/sh
+            - -c
+            - /app/efbundle --connection "$ConnectionStrings__DefaultConnection"
