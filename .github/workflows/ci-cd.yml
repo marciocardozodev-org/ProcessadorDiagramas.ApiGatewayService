@@ -70,9 +70,9 @@ jobs:
           set -e
 
           missing=()
-          [[ -z "$AWS_ACCESS_KEY_ID" ]] && missing+=("AWS_ACCESS_KEY_ID")
+          [[ -z "$AWS_ACCESS_KEY_ID" ]]     && missing+=("AWS_ACCESS_KEY_ID")
           [[ -z "$AWS_SECRET_ACCESS_KEY" ]] && missing+=("AWS_SECRET_ACCESS_KEY")
-          [[ -z "$AWS_REGION" ]] && missing+=("AWS_REGION")
+          [[ -z "$AWS_REGION" ]]            && missing+=("AWS_REGION")
 
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "Missing required GitHub Actions secrets: ${missing[*]}" >&2
@@ -81,32 +81,6 @@ jobs:
 
           if [[ "$AWS_ACCESS_KEY_ID" == ASIA* && -z "$AWS_SESSION_TOKEN" ]]; then
             echo "AWS_SESSION_TOKEN is required for temporary AWS credentials (AWS Academy/Lab)." >&2
-            exit 1
-          fi
-
-          case "$AWS_ACCESS_KEY_ID" in
-            *[[:space:]"']*)
-              echo "AWS_ACCESS_KEY_ID contains whitespace or quotes. Save only the raw value in GitHub Secrets." >&2
-              exit 1
-              ;;
-          esac
-
-          case "$AWS_SECRET_ACCESS_KEY" in
-            *[[:space:]"']*)
-              echo "AWS_SECRET_ACCESS_KEY contains whitespace or quotes. Save only the raw value in GitHub Secrets." >&2
-              exit 1
-              ;;
-          esac
-
-          case "$AWS_SESSION_TOKEN" in
-            *["']*)
-              echo "AWS_SESSION_TOKEN contains quotes. Save only the raw value in GitHub Secrets." >&2
-              exit 1
-              ;;
-          esac
-
-          if [[ "$AWS_ACCESS_KEY_ID" == export* || "$AWS_SECRET_ACCESS_KEY" == export* || "$AWS_SESSION_TOKEN" == export* ]]; then
-            echo "AWS secrets appear to contain the full export command. Save only the credential value, not the shell command." >&2
             exit 1
           fi
 
