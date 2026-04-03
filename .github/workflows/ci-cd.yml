@@ -59,6 +59,31 @@ jobs:
           docker tag ${{ env.IMAGE_NAME }}:${{ github.sha }} ${{ env.IMAGE_NAME }}:${{ github.ref_name }}-latest
           docker push ${{ env.IMAGE_NAME }}:${{ github.ref_name }}-latest
 
+      - name: Validate AWS credential inputs
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -e
+
+          missing=()
+          [[ -z "$AWS_ACCESS_KEY_ID" ]] && missing+=("AWS_ACCESS_KEY_ID")
+          [[ -z "$AWS_SECRET_ACCESS_KEY" ]] && missing+=("AWS_SECRET_ACCESS_KEY")
+          [[ -z "$AWS_REGION" ]] && missing+=("AWS_REGION")
+
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "Missing required GitHub Actions secrets: ${missing[*]}" >&2
+            exit 1
+          fi
+
+          if [[ "$AWS_ACCESS_KEY_ID" == ASIA* && -z "$AWS_SESSION_TOKEN" ]]; then
+            echo "AWS_SESSION_TOKEN is required for temporary AWS credentials (AWS Academy/Lab)." >&2
+            exit 1
+          fi
+
       - name: Configure AWS credentials
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
         uses: aws-actions/configure-aws-credentials@v4
