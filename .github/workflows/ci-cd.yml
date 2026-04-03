@@ -84,6 +84,28 @@ jobs:
             exit 1
           fi
 
+          if [[ "$AWS_ACCESS_KEY_ID" =~ [[:space:]"\'] ]]; then
+            echo "AWS_ACCESS_KEY_ID contains whitespace or quotes. Save only the raw value in GitHub Secrets." >&2
+            exit 1
+          fi
+
+          if [[ "$AWS_SECRET_ACCESS_KEY" =~ [[:space:]"\'] ]]; then
+            echo "AWS_SECRET_ACCESS_KEY contains whitespace or quotes. Save only the raw value in GitHub Secrets." >&2
+            exit 1
+          fi
+
+          if [[ -n "$AWS_SESSION_TOKEN" && "$AWS_SESSION_TOKEN" =~ ["\'] ]]; then
+            echo "AWS_SESSION_TOKEN contains quotes. Save only the raw value in GitHub Secrets." >&2
+            exit 1
+          fi
+
+          if [[ "$AWS_ACCESS_KEY_ID" == export* || "$AWS_SECRET_ACCESS_KEY" == export* || "$AWS_SESSION_TOKEN" == export* ]]; then
+            echo "AWS secrets appear to contain the full export command. Save only the credential value, not the shell command." >&2
+            exit 1
+          fi
+
+          echo "AWS credential diagnostics: key_prefix=${AWS_ACCESS_KEY_ID:0:4} key_len=${#AWS_ACCESS_KEY_ID} secret_len=${#AWS_SECRET_ACCESS_KEY} session_len=${#AWS_SESSION_TOKEN} region=$AWS_REGION"
+
       - name: Configure AWS credentials
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
         uses: aws-actions/configure-aws-credentials@v4
