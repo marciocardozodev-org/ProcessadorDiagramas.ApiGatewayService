@@ -67,13 +67,50 @@ jobs:
           echo "AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}"          >> "$GITHUB_ENV"
           echo "AWS_DEFAULT_REGION=${{ secrets.AWS_REGION }}"               >> "$GITHUB_ENV"
 
+      - name: Validate AWS deploy inputs
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+        run: |
+          set -e
+          missing=()
+          [[ -z "$AWS_REGION" ]] && missing+=("AWS_REGION")
+          [[ -z "$EKS_CLUSTER_NAME" ]] && missing+=("EKS_CLUSTER_NAME")
+
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "Missing required GitHub Actions secrets for EKS deploy: ${missing[*]}" >&2
+            exit 1
+          fi
+
+      - name: Validate AWS token and EKS access
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+        run: |
+          set -e
+
+          if ! aws sts get-caller-identity --output json >/dev/null 2>&1; then
+            echo "AWS token is invalid or expired. Renew AWS Academy credentials and update AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY and AWS_SESSION_TOKEN." >&2
+            exit 1
+          fi
+
+          if ! aws eks describe-cluster --name "$EKS_CLUSTER_NAME" --region "$AWS_REGION" --output json >/dev/null 2>&1; then
+            echo "Unable to access EKS cluster '$EKS_CLUSTER_NAME' in region '$AWS_REGION'. Check cluster name, region, and IAM permissions in AWS Academy account." >&2
+            exit 1
+          fi
+
       - name: Setup kubectl
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
         uses: azure/setup-kubectl@v4
 
       - name: Generate kubeconfig
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
-        run: aws eks update-kubeconfig --region "${{ secrets.AWS_REGION }}" --name "${{ secrets.EKS_CLUSTER_NAME }}"
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ secrets.EKS_CLUSTER_NAME }}
+        run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
 
       - name: Ensure namespace
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
