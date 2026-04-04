@@ -30,11 +30,21 @@ builder.Services.Configure<UploadStorageSettings>(builder.Configuration.GetSecti
 builder.Services.AddScoped<IDiagramFileStorage, LocalDiagramFileStorage>();
 
 // --- AWS / Messaging ---
-builder.Services.Configure<AwsSettings>(builder.Configuration.GetSection("Aws"));
-builder.Services.AddDefaultAWSOptions(builder.Configuration.GetAWSOptions());
-builder.Services.AddAWSService<IAmazonSimpleNotificationService>();
-builder.Services.AddAWSService<IAmazonSQS>();
-builder.Services.AddScoped<IMessageBus, AwsMessageBus>();
+var enableAwsServices = !builder.Environment.IsDevelopment() || builder.Configuration.GetValue<bool>("EnableAwsServices", false);
+
+if (enableAwsServices)
+{
+    builder.Services.Configure<AwsSettings>(builder.Configuration.GetSection("Aws"));
+    builder.Services.AddDefaultAWSOptions(builder.Configuration.GetAWSOptions());
+    builder.Services.AddAWSService<IAmazonSimpleNotificationService>();
+    builder.Services.AddAWSService<IAmazonSQS>();
+    builder.Services.AddScoped<IMessageBus, AwsMessageBus>();
+}
+else
+{
+    // Dummy implementation for testing
+    builder.Services.AddScoped<IMessageBus, DummyMessageBus>();
+}
 
 // --- Downstream REST clients ---
 builder.Services.Configure<ReportServiceSettings>(builder.Configuration.GetSection("ReportService"));
@@ -58,8 +68,11 @@ builder.Services.AddScoped<OutboxPublisher>();
 builder.Services.AddScoped<IEventHandler, DiagramProcessedEventHandler>();
 
 // --- Background workers ---
-builder.Services.AddHostedService<OutboxWorker>();
-builder.Services.AddHostedService<InboxConsumer>();
+if (enableAwsServices)
+{
+    builder.Services.AddHostedService<OutboxWorker>();
+    builder.Services.AddHostedService<InboxConsumer>();
+}
 
 // --- API ---
 builder.Services.AddControllers();
