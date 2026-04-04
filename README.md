@@ -103,12 +103,17 @@ Secrets esperadas no GitHub:
 - AWS_ACCESS_KEY_ID
 - AWS_SECRET_ACCESS_KEY
 - AWS_SESSION_TOKEN
-- AWS_REGION
-- EKS_CLUSTER_NAME
 - CONNECTIONSTRINGS__DEFAULTCONNECTION
 - AWS__TOPICARN
 - AWS__QUEUEURL
 - REPORTSERVICE__BASEURL
+
+Variables recomendadas no GitHub (Repository Variables):
+- AWS_REGION
+- EKS_CLUSTER_NAME
+
+Compatibilidade:
+- A pipeline usa AWS_REGION e EKS_CLUSTER_NAME via Variables e faz fallback para Secrets com os mesmos nomes.
 
 Observacao:
 - Se estiver usando credenciais temporarias do AWS Academy, preencha tambem AWS_SESSION_TOKEN nos secrets do GitHub. Essas credenciais expiram, entao e preciso atualizar os tres valores AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY e AWS_SESSION_TOKEN quando forem renovados.
