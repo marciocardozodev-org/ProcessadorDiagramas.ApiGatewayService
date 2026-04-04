@@ -10,8 +10,8 @@ env:
   DOTNET_VERSION: 8.0.x
   IMAGE_NAME: marciocardozodev/processador-diagramas-apigatewayservice
   APP_NAME: processador-diagramas-apigatewayservice
-  AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || secrets.AWS_REGION }}
-  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME != '' && vars.EKS_CLUSTER_NAME || secrets.EKS_CLUSTER_NAME }}
+  AWS_REGION: ${{ vars.AWS_REGION || vars.AWS_DEFAULT_REGION || secrets.AWS_REGION || secrets.AWS_DEFAULT_REGION }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || vars.AWS_EKS_CLUSTER_NAME || vars.CLUSTER_NAME || secrets.EKS_CLUSTER_NAME || secrets.AWS_EKS_CLUSTER_NAME || secrets.CLUSTER_NAME }}
 
 jobs:
   build-test-deploy:
