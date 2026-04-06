@@ -10,25 +10,39 @@ namespace ProcessadorDiagramas.APIGatewayService.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AlterColumn<string>(
-                name: "ReportUrl",
-                table: "DiagramRequests",
-                type: "character varying(2048)",
-                maxLength: 2048,
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "text",
-                oldNullable: true);
+            migrationBuilder.Sql(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'DiagramRequests'
+                          AND column_name = 'ReportUrl'
+                    ) THEN
+                        ALTER TABLE "DiagramRequests" ADD COLUMN "ReportUrl" character varying(2048);
+                    ELSE
+                        ALTER TABLE "DiagramRequests" ALTER COLUMN "ReportUrl" TYPE character varying(2048);
+                    END IF;
+                END $$;
+                """);
 
-            migrationBuilder.AlterColumn<string>(
-                name: "ErrorMessage",
-                table: "DiagramRequests",
-                type: "character varying(1000)",
-                maxLength: 1000,
-                nullable: true,
-                oldClrType: typeof(string),
-                oldType: "text",
-                oldNullable: true);
+            migrationBuilder.Sql(
+                """
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1
+                        FROM information_schema.columns
+                        WHERE table_name = 'DiagramRequests'
+                          AND column_name = 'ErrorMessage'
+                    ) THEN
+                        ALTER TABLE "DiagramRequests" ADD COLUMN "ErrorMessage" character varying(1000);
+                    ELSE
+                        ALTER TABLE "DiagramRequests" ALTER COLUMN "ErrorMessage" TYPE character varying(1000);
+                    END IF;
+                END $$;
+                """);
         }
 
         /// <inheritdoc />

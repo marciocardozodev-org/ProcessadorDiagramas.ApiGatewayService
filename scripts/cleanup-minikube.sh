@@ -3,13 +3,15 @@
 # Cleanup de recursos locais Minikube
 # Remove cluster local e libera recursos
 
-set -e
+set -euo pipefail
 
-echo "[INFO] Removendo cluster Minikube..."
-minikube delete --all
+MINIKUBE_PROFILE="processador-dev"
 
-echo "[INFO] Limpando arquivos residuais..."
-rm -rf ~/.minikube ~/.kube/config 2>/dev/null || true
+echo "[INFO] Removendo cluster Minikube (profile: $MINIKUBE_PROFILE)..."
+minikube delete --profile "$MINIKUBE_PROFILE" || true
+
+echo "[INFO] Removendo cache de imagem do profile..."
+minikube image ls --profile "$MINIKUBE_PROFILE" >/dev/null 2>&1 || true
 
 echo "[SUCCESS] Cleanup concluído!"
 echo ""
