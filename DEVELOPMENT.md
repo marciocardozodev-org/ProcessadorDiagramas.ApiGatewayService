@@ -26,23 +26,50 @@ Isso instala e inicia minikube. Levará alguns minutos na primeira vez.
 dotnet build
 dotnet test
 
-# b) Build imagem Docker
+# b) Teste funcional completo local
+./scripts/test-minikube-postgres.sh
+```
+
+O script completo valida:
+
+- PostgreSQL local no cluster
+- migrations via job
+- health check
+- upload autenticado
+- simulacao do retorno do servico interno
+- consulta de status final
+- consulta de relatorio mock local
+
+Se quiser apenas um smoke test do pod e health endpoint:
+
+```bash
+# c) Build imagem Docker
 docker build -t processador-diagramas:local .
 
-# c) Load no minikube
+# d) Load no minikube
 minikube image load processador-diagramas:local
 
-# d) Deploy
-kubectl apply -f deploy/k8s/deployment.yaml
-
-# e) Validar
-kubectl get pods
-kubectl logs -f deployment/processador-diagramas-apigatewayservice
-
-# f) Debug (opcional)
-kubectl port-forward svc/processador-diagramas-apigatewayservice 8080:8080
-curl http://localhost:8080/health
+# e) Smoke test
+./scripts/test-minikube-local.sh
 ```
+
+Para chamadas manuais aos endpoints protegidos em Development, use:
+
+```bash
+X-Api-Key: dev-client-key
+```
+
+Para o endpoint interno de simulacao, use:
+
+```bash
+X-Api-Key: dev-internal-key
+```
+
+Debug opcional:
+- `kubectl get pods -n app`
+- `kubectl logs -f deployment/processador-diagramas-apigatewayservice -n app`
+- `kubectl port-forward svc/processador-diagramas-apigatewayservice 8080:80 -n app`
+- `curl http://localhost:8080/health`
 
 ### 3. Cleanup (ao terminar sessão de testes)
 

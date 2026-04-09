@@ -153,6 +153,66 @@ public sealed class DiagramRequestsControllerTests
     }
 
     [Fact]
+    public async Task Create_NameTooLong_ReturnsBadRequest()
+    {
+        var repositoryMock = new Mock<IDiagramRequestRepository>();
+        var reportClientMock = new Mock<IReportServiceClient>();
+        var fileStorageMock = new Mock<IDiagramFileStorage>();
+
+        var controller = BuildGetOnlyController(repositoryMock.Object, reportClientMock.Object, fileStorageMock.Object);
+
+        using var fileContent = new MemoryStream(new byte[128]);
+        var formFile = new FormFile(fileContent, 0, fileContent.Length, "file", "architecture.png")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "image/png"
+        };
+
+        var dto = new CreateDiagramRequestDto
+        {
+            File = formFile,
+            Name = new string('a', 201)
+        };
+
+        var response = await controller.Create(dto, CancellationToken.None);
+
+        response.Should().BeOfType<BadRequestObjectResult>();
+        fileStorageMock.Verify(
+            s => s.SaveAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Create_DescriptionTooLong_ReturnsBadRequest()
+    {
+        var repositoryMock = new Mock<IDiagramRequestRepository>();
+        var reportClientMock = new Mock<IReportServiceClient>();
+        var fileStorageMock = new Mock<IDiagramFileStorage>();
+
+        var controller = BuildGetOnlyController(repositoryMock.Object, reportClientMock.Object, fileStorageMock.Object);
+
+        using var fileContent = new MemoryStream(new byte[128]);
+        var formFile = new FormFile(fileContent, 0, fileContent.Length, "file", "architecture.png")
+        {
+            Headers = new HeaderDictionary(),
+            ContentType = "image/png"
+        };
+
+        var dto = new CreateDiagramRequestDto
+        {
+            File = formFile,
+            Description = new string('b', 1001)
+        };
+
+        var response = await controller.Create(dto, CancellationToken.None);
+
+        response.Should().BeOfType<BadRequestObjectResult>();
+        fileStorageMock.Verify(
+            s => s.SaveAsync(It.IsAny<Stream>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
     public async Task Create_ValidMultipartUpload_WithLocalStorage_PersistsFileAndOutboxMessage()
     {
         var uploadRoot = Path.Combine(Path.GetTempPath(), "diagram-upload-tests", Guid.NewGuid().ToString("N"));

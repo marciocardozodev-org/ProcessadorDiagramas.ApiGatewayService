@@ -10,17 +10,19 @@ services:
       - "5000:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Development
+      - EnableAwsServices=false
       - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=processador_diagramas;Username=postgres;Password=postgres
       - Aws__Region=us-east-1
       - Aws__TopicArn=arn:aws:sns:us-east-1:000000000000:diagram-requests
       - Aws__QueueUrl=http://localstack:4566/000000000000/diagram-events
       - Aws__ServiceURL=http://localstack:4566
-      - ReportService__BaseUrl=http://report-service:8080
+      - ReportService__BaseUrl=http://mock-report-service.local
       - ReportService__GetReportPathTemplate=/api/reports/{analysisId}
+      - ReportService__UseMock=true
+      - Auth__ClientApiKey=dev-client-key
+      - Auth__InternalApiKey=dev-internal-key
     depends_on:
       postgres:
-        condition: service_healthy
-      localstack:
         condition: service_healthy
 
   postgres:

@@ -18,7 +18,10 @@ metadata:
 data:
   ASPNETCORE_ENVIRONMENT: Development
   EnableAwsServices: "false"
-  DatabaseProvider: "InMemory"
+  ReportService__BaseUrl: "http://mock-report-service.local"
+  ReportService__UseMock: "true"
+  Auth__ClientApiKey: "dev-client-key"
+  Auth__InternalApiKey: "dev-internal-key"
 ---
 apiVersion: v1
 kind: Secret
@@ -114,3 +117,4 @@ curl -fsS http://127.0.0.1:18080/health >/tmp/processador-health.txt
 echo "[SUCCESS] Teste local OK!"
 kubectl get pods -n "$NAMESPACE"
 echo "Health: $(cat /tmp/processador-health.txt)"
+echo "Observacao: para validar fluxo funcional completo use ./scripts/test-minikube-postgres.sh"

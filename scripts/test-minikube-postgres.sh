@@ -128,8 +128,10 @@ metadata:
 data:
   ASPNETCORE_ENVIRONMENT: Development
   EnableAwsServices: "false"
-  DatabaseProvider: "PostgreSQL"
-  ReportService__BaseUrl: "http://localhost:8081"
+  ReportService__BaseUrl: "http://mock-report-service.local"
+  ReportService__UseMock: "true"
+  Auth__ClientApiKey: "dev-client-key"
+  Auth__InternalApiKey: "dev-internal-key"
 ---
 apiVersion: v1
 kind: Secret
@@ -249,6 +251,7 @@ curl -fsS http://127.0.0.1:18080/health >/tmp/processador-health-postgres.txt
 echo "[INFO] Testando endpoint de negocio (POST /api/diagrams)..."
 echo "fake image bytes" > /tmp/diagram-test.png
 RESPONSE=$(curl -sS -X POST "http://127.0.0.1:18080/api/diagrams" \
+  -H "X-Api-Key: dev-client-key" \
   -F "file=@/tmp/diagram-test.png;type=image/png" \
   -F "name=Teste Local" \
   -F "description=Teste com PostgreSQL no Minikube")
@@ -263,12 +266,39 @@ if [[ -z "$REQUEST_ID" ]]; then
 fi
 
 echo "[INFO] Testando endpoint de consulta (GET /api/diagrams/$REQUEST_ID)..."
-curl -fsS "http://127.0.0.1:18080/api/diagrams/$REQUEST_ID" > /tmp/processador-get-response.json
+curl -fsS -H "X-Api-Key: dev-client-key" "http://127.0.0.1:18080/api/diagrams/$REQUEST_ID" > /tmp/processador-get-response.json
+
+echo "[INFO] Simulando retorno do servico interno de processamento..."
+curl -fsS -X POST "http://127.0.0.1:18080/internal/testing/diagram-processed" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: dev-internal-key" \
+  -d "{\"diagramRequestId\":\"$REQUEST_ID\",\"isSuccess\":true,\"resultUrl\":\"https://reports.local/$REQUEST_ID\"}" \
+  > /tmp/processador-simulate-response.json
+
+echo "[INFO] Validando status final analisado..."
+curl -fsS -H "X-Api-Key: dev-client-key" "http://127.0.0.1:18080/api/diagrams/$REQUEST_ID" > /tmp/processador-get-analyzed-response.json
+
+if ! grep -q 'Analyzed' /tmp/processador-get-analyzed-response.json; then
+  echo "[ERROR] O status final nao foi atualizado para Analyzed."
+  echo "Resposta: $(cat /tmp/processador-get-analyzed-response.json)"
+  exit 1
+fi
+
+echo "[INFO] Testando endpoint de relatorio (GET /api/diagrams/$REQUEST_ID/report)..."
+curl -fsS -H "X-Api-Key: dev-client-key" "http://127.0.0.1:18080/api/diagrams/$REQUEST_ID/report" > /tmp/processador-report-response.json
+
+if ! grep -q 'Relatorio tecnico local' /tmp/processador-report-response.json; then
+  echo "[ERROR] O endpoint de relatorio nao retornou o payload esperado do mock local."
+  echo "Resposta: $(cat /tmp/processador-report-response.json)"
+  exit 1
+fi
 
 echo "[SUCCESS] Teste completo com PostgreSQL local concluido!"
 echo "Health: $(cat /tmp/processador-health-postgres.txt)"
 echo "Create response: $(cat /tmp/processador-create-response.json)"
 echo "Get response: $(cat /tmp/processador-get-response.json)"
+echo "Analyzed response: $(cat /tmp/processador-get-analyzed-response.json)"
+echo "Report response: $(cat /tmp/processador-report-response.json)"
 
 echo
 kubectl get pods -n "$NAMESPACE"

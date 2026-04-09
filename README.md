@@ -25,6 +25,10 @@ e consome o resultado via padrao Inbox com deduplicacao.
 | Aws__ServiceURL                       | URL local do LocalStack (apenas dev)       | http://localhost:4566                                |
 | ReportService__BaseUrl                | URL base do microservico de relatorios     | http://localhost:8081                                |
 | ReportService__GetReportPathTemplate  | Template da rota de consulta de relatorio  | /api/reports/{analysisId}                            |
+| ReportService__UseMock                | Usa relatorio mock local em desenvolvimento | true                                                 |
+| Auth__HeaderName                      | Nome do header da API key                   | X-Api-Key                                            |
+| Auth__ClientApiKey                    | API key para endpoints publicos             | dev-client-key                                       |
+| Auth__InternalApiKey                  | API key para simulacoes internas            | dev-internal-key                                     |
 | UploadStorage__RootPath               | Pasta local temporaria para uploads        | /tmp/uploads                                         |
 | ASPNETCORE_ENVIRONMENT                | Ambiente da aplicacao                       | Development                                          |
 
@@ -33,11 +37,11 @@ e consome o resultado via padrao Inbox com deduplicacao.
 ## Rodar localmente com Docker Compose
 
 ```bash
-# Subir PostgreSQL, LocalStack e a API
+# Subir PostgreSQL e a API
 docker compose up --build
 
-# Apenas a infraestrutura (DB + LocalStack) sem a API
-docker compose up postgres localstack
+# Apenas a infraestrutura sem a API
+docker compose up postgres
 
 # Executar migrations a partir do host
 dotnet tool install --global dotnet-ef
@@ -50,13 +54,18 @@ Depois de subir, acesse:
 - **Swagger UI:** http://localhost:5000/swagger
 - **Health check:** http://localhost:5000/health
 
+Autenticacao local padrao:
+- Header: X-Api-Key
+- Chave de cliente: dev-client-key
+- Chave interna de simulacao: dev-internal-key
+
 ---
 
 ## Rodar localmente sem Docker
 
 ```bash
 # 1. Suba apenas a infra
-docker compose up postgres localstack -d
+docker compose up postgres -d
 
 # 2. Configure as variaveis (ou use appsettings.Development.json)
 export ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=processador_diagramas_dev;Username=postgres;Password=postgres"
@@ -67,6 +76,25 @@ dotnet ef database update
 
 # 4. Execute a API
 dotnet run
+```
+
+Para concluir o fluxo local sem depender do servico real de processamento, use a simulacao interna em Development:
+
+```bash
+# 1. Criar solicitacao
+curl -X POST "http://localhost:5000/api/diagrams" \
+  -H "X-Api-Key: dev-client-key" \
+  -F "file=@./diagram.png;type=image/png"
+
+# 2. Simular retorno do servico interno
+curl -X POST "http://localhost:5000/internal/testing/diagram-processed" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: dev-internal-key" \
+  -d '{"diagramRequestId":"SEU_ID","isSuccess":true,"resultUrl":"https://reports.local/SEU_ID"}'
+
+# 3. Consultar status e relatorio
+curl -H "X-Api-Key: dev-client-key" "http://localhost:5000/api/diagrams/SEU_ID"
+curl -H "X-Api-Key: dev-client-key" "http://localhost:5000/api/diagrams/SEU_ID/report"
 ```
 
 ---
@@ -142,6 +170,7 @@ Regras:
 
 ```bash
 curl -X POST "http://localhost:5000/api/diagrams" \
+  -H "X-Api-Key: dev-client-key" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@./diagram.png;type=image/png" \
   -F "name=Arquitetura Checkout" \
@@ -160,8 +189,9 @@ Resposta `201 Created`:
 ### GET /api/diagrams/{id}
 Retorna o status atual da requisicao.
 
-```json
-GET /api/diagrams/3fa85f64-5717-4562-b3fc-2c963f66afa6
+```bash
+curl -H "X-Api-Key: dev-client-key" \
+  "http://localhost:5000/api/diagrams/3fa85f64-5717-4562-b3fc-2c963f66afa6"
 ```
 
 Resposta `200 OK`:
@@ -175,6 +205,16 @@ Resposta `200 OK`:
   "reportUrl": "https://reports.local/analysis-123",
   "errorMessage": null
 }
+```
+
+### POST /internal/testing/diagram-processed
+Endpoint interno de apoio para desenvolvimento local. Disponivel apenas em `Development` e protegido por API key interna.
+
+```bash
+curl -X POST "http://localhost:5000/internal/testing/diagram-processed" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: dev-internal-key" \
+  -d '{"diagramRequestId":"3fa85f64-5717-4562-b3fc-2c963f66afa6","isSuccess":true,"resultUrl":"https://reports.local/analysis-123"}'
 ```
 
 ### GET /api/diagrams/{id}/report
