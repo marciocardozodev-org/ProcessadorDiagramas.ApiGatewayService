@@ -207,6 +207,7 @@ echo "[INFO] Aplicando infraestrutura local (namespace, postgres, config/secrets
 kubectl apply -f "$MANIFEST"
 
 echo "[INFO] Aguardando PostgreSQL ficar pronto..."
+kubectl rollout status deployment/postgres -n "$NAMESPACE" --timeout=180s
 kubectl wait --for=condition=ready pod -l app=postgres -n "$NAMESPACE" --timeout=180s
 
 echo "[INFO] Executando migration job..."
@@ -226,13 +227,16 @@ spec:
       - name: migrations
         image: $IMAGE
         imagePullPolicy: IfNotPresent
-        envFrom:
-        - secretRef:
-            name: processador-diagramas-apigatewayservice-secrets
+        env:
+        - name: DB_CONNECTION
+          valueFrom:
+            secretKeyRef:
+              name: processador-diagramas-apigatewayservice-secrets
+              key: ConnectionStrings__DefaultConnection
         command:
         - /bin/sh
         - -c
-        - /app/efbundle --connection "\$ConnectionStrings__DefaultConnection"
+        - /app/efbundle --connection "\$DB_CONNECTION"
 YAML
 kubectl wait --for=condition=complete job/processador-diagramas-apigatewayservice-migrations-local -n "$NAMESPACE" --timeout=240s
 
