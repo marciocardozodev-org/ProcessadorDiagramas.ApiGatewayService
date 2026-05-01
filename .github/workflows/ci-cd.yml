@@ -11,7 +11,7 @@ env:
   IMAGE_NAME: marciocardozodev/processador-diagramas-apigatewayservice
   APP_NAME: processador-diagramas-apigatewayservice
   AWS_REGION: us-east-1
-  EKS_CLUSTER_NAME: processadordiagramas-apigateway
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'processadordiagramas-apigateway' }}
 
 jobs:
   build-test-deploy:
@@ -73,6 +73,31 @@ jobs:
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
         uses: azure/setup-kubectl@v4
 
+      - name: Check EKS cluster availability
+        id: check-eks
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        run: |
+          set +e
+          aws eks describe-cluster --region "${{ env.AWS_REGION }}" --name "${{ env.EKS_CLUSTER_NAME }}" >/tmp/eks-describe.out 2>&1
+          RC=$?
+          set -e
+
+          if [ "$RC" -eq 0 ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "[INFO] Cluster EKS encontrado: ${{ env.EKS_CLUSTER_NAME }}"
+            exit 0
+          fi
+
+          if grep -q "ResourceNotFoundException" /tmp/eks-describe.out; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Cluster EKS '${{ env.EKS_CLUSTER_NAME }}' nao encontrado. Etapas de Kubernetes serao ignoradas nesta execucao."
+            exit 0
+          fi
+
+          echo "[ERROR] Falha ao consultar cluster EKS '${{ env.EKS_CLUSTER_NAME }}'."
+          cat /tmp/eks-describe.out
+          exit "$RC"
+
       - name: Ensure RDS PostgreSQL is running
         id: ensure-rds
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
@@ -96,17 +121,17 @@ jobs:
         run: bash scripts/rds-manage.sh ensure
 
       - name: Generate kubeconfig
-        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master') && steps.check-eks.outputs.exists == 'true'
         run: aws eks update-kubeconfig --region "${{ env.AWS_REGION }}" --name "${{ env.EKS_CLUSTER_NAME }}"
 
       - name: Ensure namespace
-        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master') && steps.check-eks.outputs.exists == 'true'
         env:
           K8S_NAMESPACE: ${{ github.ref_name == 'master' && 'production' || 'homolog' }}
         run: kubectl create namespace "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Ensure application configmap
-        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master') && steps.check-eks.outputs.exists == 'true'
         env:
           K8S_NAMESPACE: ${{ github.ref_name == 'master' && 'production' || 'homolog' }}
         run: |
@@ -119,7 +144,7 @@ jobs:
             -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Ensure application secrets
-        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master') && steps.check-eks.outputs.exists == 'true'
         env:
           K8S_NAMESPACE: ${{ github.ref_name == 'master' && 'production' || 'homolog' }}
           RDS_ENDPOINT: ${{ steps.ensure-rds.outputs.endpoint }}
@@ -153,7 +178,7 @@ jobs:
             -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Run database migrations
-        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master') && steps.check-eks.outputs.exists == 'true'
         env:
           K8S_NAMESPACE: ${{ github.ref_name == 'master' && 'production' || 'homolog' }}
         run: |
@@ -167,7 +192,7 @@ jobs:
           }
 
       - name: Deploy to Kubernetes
-        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master') && steps.check-eks.outputs.exists == 'true'
         env:
           K8S_NAMESPACE: ${{ github.ref_name == 'master' && 'production' || 'homolog' }}
         run: |
@@ -176,7 +201,7 @@ jobs:
           kubectl rollout status deployment/${{ env.APP_NAME }} -n "$K8S_NAMESPACE" --timeout=10m
 
       - name: Smoke test API in EKS
-        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master') && steps.check-eks.outputs.exists == 'true'
         env:
           K8S_NAMESPACE: ${{ github.ref_name == 'master' && 'production' || 'homolog' }}
           AUTH_CLIENT_API_KEY: ${{ secrets.AUTH__CLIENTAPIKEY }}
