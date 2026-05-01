@@ -27,12 +27,48 @@ DB_PUBLICLY_ACCESSIBLE="${DB_PUBLICLY_ACCESSIBLE:-false}"
 DB_MULTI_AZ="${DB_MULTI_AZ:-false}"
 DB_AUTO_MINOR_VERSION_UPGRADE="${DB_AUTO_MINOR_VERSION_UPGRADE:-false}"
 
+validate_aws_credentials() {
+  local output
+
+  if output="$(aws sts get-caller-identity --output text 2>&1)"; then
+    return
+  fi
+
+  if echo "$output" | grep -Eq "InvalidClientTokenId|ExpiredToken|UnrecognizedClientException"; then
+    echo "[ERROR] Credenciais AWS invalidas ou expiradas." >&2
+    echo "[ERROR] Atualize AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY e AWS_SESSION_TOKEN nos Secrets do GitHub." >&2
+    echo "[ERROR] Detalhe AWS: $output" >&2
+    exit 1
+  fi
+
+  echo "[ERROR] Falha ao validar credenciais AWS: $output" >&2
+  exit 1
+}
+
 db_exists() {
-  aws rds describe-db-instances \
+  local output
+
+  if output="$(aws rds describe-db-instances \
     --region "$AWS_REGION" \
     --db-instance-identifier "$DB_INSTANCE_IDENTIFIER" \
     --query 'DBInstances[0].DBInstanceIdentifier' \
-    --output text >/dev/null 2>&1
+    --output text 2>&1)"; then
+    return 0
+  fi
+
+  if echo "$output" | grep -q "DBInstanceNotFound"; then
+    return 1
+  fi
+
+  if echo "$output" | grep -Eq "InvalidClientTokenId|ExpiredToken|UnrecognizedClientException"; then
+    echo "[ERROR] Credenciais AWS invalidas ou expiradas durante consulta da instancia RDS." >&2
+    echo "[ERROR] Atualize AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY e AWS_SESSION_TOKEN nos Secrets do GitHub." >&2
+    echo "[ERROR] Detalhe AWS: $output" >&2
+    exit 1
+  fi
+
+  echo "[ERROR] Falha inesperada ao consultar instancia '$DB_INSTANCE_IDENTIFIER': $output" >&2
+  exit 1
 }
 
 db_status() {
@@ -229,20 +265,24 @@ output_db_info() {
 
 case "$ACTION" in
   ensure)
+    validate_aws_credentials
     ensure_db
     output_db_info
     ;;
   start)
+    validate_aws_credentials
     start_db
     output_db_info
     ;;
   stop)
+    validate_aws_credentials
     stop_db
     if db_exists; then
       output_db_info
     fi
     ;;
   status)
+    validate_aws_credentials
     if db_exists; then
       output_db_info
     else
