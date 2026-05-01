@@ -41,6 +41,7 @@ jobs:
           EKS_NODEGROUP_NAME: ${{ vars.EKS_NODEGROUP_NAME || 'processador-diagramas-shared-eks-ng' }}
           EKS_VERSION: ${{ vars.EKS_VERSION || '1.29' }}
           EKS_NODE_INSTANCE_TYPE: ${{ vars.EKS_NODE_INSTANCE_TYPE || 't3.small' }}
+          EKS_NODE_AMI_TYPE: ${{ vars.EKS_NODE_AMI_TYPE || 'AL2023_x86_64_STANDARD' }}
           EKS_NODE_DISK_SIZE: ${{ vars.EKS_NODE_DISK_SIZE || '20' }}
           EKS_NODE_DESIRED: ${{ vars.EKS_NODE_DESIRED || '1' }}
           EKS_NODE_MIN: ${{ vars.EKS_NODE_MIN || '1' }}

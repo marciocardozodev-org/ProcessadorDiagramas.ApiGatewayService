@@ -18,6 +18,7 @@ require_env EKS_CLUSTER_NAME
 EKS_NODEGROUP_NAME="${EKS_NODEGROUP_NAME:-${EKS_CLUSTER_NAME}-ng}"
 EKS_VERSION="${EKS_VERSION:-1.29}"
 EKS_NODE_INSTANCE_TYPE="${EKS_NODE_INSTANCE_TYPE:-t3.small}"
+EKS_NODE_AMI_TYPE="${EKS_NODE_AMI_TYPE:-AL2023_x86_64_STANDARD}"
 EKS_NODE_DISK_SIZE="${EKS_NODE_DISK_SIZE:-20}"
 EKS_NODE_DESIRED="${EKS_NODE_DESIRED:-1}"
 EKS_NODE_MIN="${EKS_NODE_MIN:-1}"
@@ -210,6 +211,7 @@ create_nodegroup() {
     --subnets "${subnet_arr[@]}" \
     --node-role "$EKS_NODE_ROLE_ARN" \
     --scaling-config "minSize=$EKS_NODE_MIN,maxSize=$EKS_NODE_MAX,desiredSize=$EKS_NODE_DESIRED" \
+    --ami-type "$EKS_NODE_AMI_TYPE" \
     --instance-types "$EKS_NODE_INSTANCE_TYPE" \
     --disk-size "$EKS_NODE_DISK_SIZE" >/dev/null
 
