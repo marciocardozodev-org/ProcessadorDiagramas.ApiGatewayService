@@ -88,7 +88,7 @@ Depois que validar localmente:
 1. Fazer merge `develop → homolog` no GitHub
 2. Pipeline automaticamente:
    - Build imagem Docker
-   - Cria cluster EKS em `us-east-1`
+   - Usa cluster EKS existente em `us-east-1`
    - Faz deploy com as migrations
 3. Validar em `homolog`  
 4. Se OK, merge `homolog → master` para `production`
