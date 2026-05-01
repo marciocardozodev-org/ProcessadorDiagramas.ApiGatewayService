@@ -47,6 +47,9 @@ public sealed class DiagramProcessedEventHandler : IEventHandler
             return;
         }
 
+        if (request.Status == Domain.Enums.DiagramStatus.Received)
+            request.MarkAsProcessing();
+
         if (@event.IsSuccess)
             request.MarkAsAnalyzed(@event.ResultUrl);
         else

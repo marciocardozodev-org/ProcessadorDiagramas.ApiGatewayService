@@ -25,6 +25,10 @@ e consome o resultado via padrao Inbox com deduplicacao.
 | Aws__ServiceURL                       | URL local do LocalStack (apenas dev)       | http://localhost:4566                                |
 | ReportService__BaseUrl                | URL base do microservico de relatorios     | http://localhost:8081                                |
 | ReportService__GetReportPathTemplate  | Template da rota de consulta de relatorio  | /api/reports/{analysisId}                            |
+| ReportService__UseMock                | Usa relatorio mock local em desenvolvimento | true                                                 |
+| Auth__HeaderName                      | Nome do header da API key                   | X-Api-Key                                            |
+| Auth__ClientApiKey                    | API key para endpoints publicos             | dev-client-key                                       |
+| Auth__InternalApiKey                  | API key para simulacoes internas            | dev-internal-key                                     |
 | UploadStorage__RootPath               | Pasta local temporaria para uploads        | /tmp/uploads                                         |
 | ASPNETCORE_ENVIRONMENT                | Ambiente da aplicacao                       | Development                                          |
 
@@ -33,11 +37,11 @@ e consome o resultado via padrao Inbox com deduplicacao.
 ## Rodar localmente com Docker Compose
 
 ```bash
-# Subir PostgreSQL, LocalStack e a API
+# Subir PostgreSQL e a API
 docker compose up --build
 
-# Apenas a infraestrutura (DB + LocalStack) sem a API
-docker compose up postgres localstack
+# Apenas a infraestrutura sem a API
+docker compose up postgres
 
 # Executar migrations a partir do host
 dotnet tool install --global dotnet-ef
@@ -50,13 +54,18 @@ Depois de subir, acesse:
 - **Swagger UI:** http://localhost:5000/swagger
 - **Health check:** http://localhost:5000/health
 
+Autenticacao local padrao:
+- Header: X-Api-Key
+- Chave de cliente: dev-client-key
+- Chave interna de simulacao: dev-internal-key
+
 ---
 
 ## Rodar localmente sem Docker
 
 ```bash
 # 1. Suba apenas a infra
-docker compose up postgres localstack -d
+docker compose up postgres -d
 
 # 2. Configure as variaveis (ou use appsettings.Development.json)
 export ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=processador_diagramas_dev;Username=postgres;Password=postgres"
@@ -67,6 +76,97 @@ dotnet ef database update
 
 # 4. Execute a API
 dotnet run
+```
+
+Para concluir o fluxo local sem depender do servico real de processamento, use a simulacao interna em Development:
+
+```bash
+# 1. Criar solicitacao
+curl -X POST "http://localhost:5000/api/diagrams" \
+  -H "X-Api-Key: dev-client-key" \
+  -F "file=@./diagram.png;type=image/png"
+
+# 2. Simular retorno do servico interno
+curl -X POST "http://localhost:5000/internal/testing/diagram-processed" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: dev-internal-key" \
+  -d '{"diagramRequestId":"SEU_ID","isSuccess":true,"resultUrl":"https://reports.local/SEU_ID"}'
+
+# 3. Consultar status e relatorio
+curl -H "X-Api-Key: dev-client-key" "http://localhost:5000/api/diagrams/SEU_ID"
+curl -H "X-Api-Key: dev-client-key" "http://localhost:5000/api/diagrams/SEU_ID/report"
+```
+
+---
+
+## Testar SNS/SQS localmente (com LocalStack)
+
+Para testar o fluxo completo de publicacao de eventos (SNS) e consumo (SQS) localmente:
+
+### 1. Subir docker-compose com AWS Services habilitados
+
+```bash
+# Subir toda a infraestrutura (PostgreSQL, LocalStack, inicializar SNS/SQS)
+ENABLE_AWS_SERVICES=true docker compose up --build
+
+# Ou em uma sessao separada, apenas a infra mais leve
+docker compose up postgres localstack -d
+bash scripts/init-localstack.sh
+```
+
+### 2. Validar que SNS/SQS estao funcionando
+
+```bash
+# Testa conectividade e cria topico/fila se nao existirem
+bash scripts/test-sqs-sns-local.sh
+```
+
+Esperado: **All tests passed!**
+
+### 3. Testar end-to-end: enviar diagrama e monitorar fila
+
+```bash
+# Inicia API em container (ou via 'dotnet run' em outro terminal)
+# Garanta que appsettings.Development.json tem EnableAwsServices=true
+
+# Envia requisicao para criar diagrama e monitora fila SQS
+bash scripts/send-diagram-request.sh
+```
+
+Esperado: **End-to-End Test PASSED!**
+
+Fluxo validado:
+1. Cliente faz POST `/api/diagrams` com arquivo
+2. API persiste em banco + publica evento no SNS (via padrão Outbox)
+3. SNS roteia para fila SQS
+4. InboxConsumer consome mensagem de SQS
+5. Handlers processam o evento (ex: DiagramProcessedEventHandler)
+
+### 4. Comandos cURL úteis para testar manualmente
+
+Listar mensagens na fila:
+```bash
+aws sqs receive-message \
+  --queue-url "http://localhost:4566/000000000000/diagram-events" \
+  --endpoint-url "http://localhost:4566" \
+  --region us-east-1
+```
+
+Publicar mensagem diretamente no SNS:
+```bash
+aws sns publish \
+  --topic-arn "arn:aws:sns:us-east-1:000000000000:diagram-requests" \
+  --message '{"eventType":"DiagramProcessed","payload":{"diagramId":"test-123"}}' \
+  --endpoint-url "http://localhost:4566" \
+  --region us-east-1
+```
+
+Purgar fila (deletar todas as mensagens):
+```bash
+aws sqs purge-queue \
+  --queue-url "http://localhost:4566/000000000000/diagram-events" \
+  --endpoint-url "http://localhost:4566" \
+  --region us-east-1
 ```
 
 ---
@@ -103,14 +203,34 @@ Secrets esperadas no GitHub:
 - AWS_ACCESS_KEY_ID
 - AWS_SECRET_ACCESS_KEY
 - AWS_SESSION_TOKEN
-- CONNECTIONSTRINGS__DEFAULTCONNECTION
 - AWS__TOPICARN
 - AWS__QUEUEURL
 - REPORTSERVICE__BASEURL
+- AUTH__CLIENTAPIKEY
+- AUTH__INTERNALAPIKEY
+- RDS_MASTER_USERNAME
+- RDS_MASTER_PASSWORD
+
+Observacao sobre `CONNECTIONSTRINGS__DEFAULTCONNECTION`:
+- Agora a pipeline prioriza criar/iniciar o RDS automaticamente e montar a connection string com endpoint dinamico.
+- `CONNECTIONSTRINGS__DEFAULTCONNECTION` pode ser mantida como fallback, mas deixa de ser obrigatoria quando o fluxo automatico de RDS estiver configurado.
 
 Variables recomendadas no GitHub (Repository Variables):
 - AWS_REGION
 - EKS_CLUSTER_NAME
+- RDS_DB_INSTANCE_IDENTIFIER
+- RDS_DB_SUBNET_GROUP_NAME
+- RDS_DB_VPC_SECURITY_GROUP_IDS
+- RDS_DB_NAME (opcional, default: processador_diagramas)
+- RDS_DB_ENGINE_VERSION (opcional; se vazio, usa automaticamente a versão default disponível da AWS)
+- RDS_DB_INSTANCE_CLASS (opcional, default: db.t3.micro)
+- RDS_DB_ALLOCATED_STORAGE (opcional, default: 20)
+- RDS_DB_STORAGE_TYPE (opcional, default: gp3)
+- RDS_DB_PORT (opcional, default: 5432)
+- RDS_DB_BACKUP_RETENTION_DAYS (opcional, default: 1)
+- RDS_DB_PUBLICLY_ACCESSIBLE (opcional, default: false)
+- RDS_DB_MULTI_AZ (opcional, default: false)
+- RDS_DB_AUTO_MINOR_VERSION_UPGRADE (opcional, default: false)
 
 Compatibilidade:
 - A pipeline usa AWS_REGION e EKS_CLUSTER_NAME via Variables e faz fallback para Secrets com os mesmos nomes.
@@ -123,6 +243,35 @@ Promocao esperada:
 - pull request para develop: valida build e testes
 - merge em homolog: publica imagem e faz deploy no namespace homolog
 - merge em master: publica imagem e faz deploy no namespace production
+
+## RDS PostgreSQL economico (AWS Academy)
+
+Objetivo: criar o banco com custo minimo e ligar/desligar por demanda durante os estudos.
+
+Configuracao recomendada de menor custo para laboratorio:
+- Engine: PostgreSQL (versão default disponível no momento da criação, salvo se você fixar `RDS_DB_ENGINE_VERSION`)
+- Classe: `db.t3.micro` (ou `db.t4g.micro` se disponivel na conta)
+- Storage: `gp3` com `20 GiB`
+- Multi-AZ: `false`
+- Public access: `false` (preferencial, para trafego interno no VPC)
+- Backup retention: `1` dia
+- Deletion protection: `false` (laboratorio)
+- Performance Insights: `false`
+
+Fluxo na pipeline:
+1. Em push para `homolog` ou `master`, a pipeline executa `scripts/rds-manage.sh ensure`.
+2. Se o RDS nao existir, ele e criado.
+3. Se estiver parado, ele e iniciado.
+4. Endpoint/porta retornam para a pipeline, que monta a connection string dinamica.
+5. Migrations rodam e depois o deployment da API e aplicado.
+
+Como desligar para economizar creditos:
+- Use o workflow manual `Manage RDS PostgreSQL` com a acao `stop`.
+- Ao retomar estudos, execute novamente com `start` (ou `ensure`).
+
+Importante:
+- Instancias RDS paradas podem ser religadas automaticamente pela AWS apos alguns dias. Antes de estudar, rode `start`/`ensure`.
+- Para economia maxima, finalize sempre com `stop` ao terminar a sessao de estudos.
 
 ---
 
@@ -142,6 +291,7 @@ Regras:
 
 ```bash
 curl -X POST "http://localhost:5000/api/diagrams" \
+  -H "X-Api-Key: dev-client-key" \
   -H "Content-Type: multipart/form-data" \
   -F "file=@./diagram.png;type=image/png" \
   -F "name=Arquitetura Checkout" \
@@ -160,8 +310,9 @@ Resposta `201 Created`:
 ### GET /api/diagrams/{id}
 Retorna o status atual da requisicao.
 
-```json
-GET /api/diagrams/3fa85f64-5717-4562-b3fc-2c963f66afa6
+```bash
+curl -H "X-Api-Key: dev-client-key" \
+  "http://localhost:5000/api/diagrams/3fa85f64-5717-4562-b3fc-2c963f66afa6"
 ```
 
 Resposta `200 OK`:
@@ -175,6 +326,16 @@ Resposta `200 OK`:
   "reportUrl": "https://reports.local/analysis-123",
   "errorMessage": null
 }
+```
+
+### POST /internal/testing/diagram-processed
+Endpoint interno de apoio para desenvolvimento local. Disponivel apenas em `Development` e protegido por API key interna.
+
+```bash
+curl -X POST "http://localhost:5000/internal/testing/diagram-processed" \
+  -H "Content-Type: application/json" \
+  -H "X-Api-Key: dev-internal-key" \
+  -d '{"diagramRequestId":"3fa85f64-5717-4562-b3fc-2c963f66afa6","isSuccess":true,"resultUrl":"https://reports.local/analysis-123"}'
 ```
 
 ### GET /api/diagrams/{id}/report

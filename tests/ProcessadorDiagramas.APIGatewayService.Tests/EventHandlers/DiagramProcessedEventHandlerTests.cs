@@ -56,6 +56,30 @@ public sealed class DiagramProcessedEventHandlerTests
     }
 
     [Fact]
+    public async Task HandleAsync_SuccessEvent_FromReceivedState_TransitionsThroughProcessing()
+    {
+        var request = DiagramRequest.Create("graph TD; A-->B;", DiagramFormat.Mermaid);
+
+        _repositoryMock
+            .Setup(r => r.GetByIdAsync(request.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(request);
+
+        var @event = new DiagramProcessedEvent(
+            request.Id,
+            IsSuccess: true,
+            ResultUrl: "https://example.com/result.png",
+            ErrorMessage: null,
+            ProcessedAt: DateTime.UtcNow);
+
+        var payload = JsonSerializer.Serialize(@event);
+
+        await _handler.HandleAsync(payload);
+
+        request.Status.Should().Be(DiagramStatus.Analyzed);
+        _repositoryMock.Verify(r => r.UpdateAsync(request, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task HandleAsync_FailureEvent_MarksRequestAsError()
     {
         var request = DiagramRequest.Create("graph TD; A-->B;", DiagramFormat.Mermaid);
