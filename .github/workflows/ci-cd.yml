@@ -73,6 +73,28 @@ jobs:
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
         uses: azure/setup-kubectl@v4
 
+      - name: Ensure RDS PostgreSQL is running
+        id: ensure-rds
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          DB_INSTANCE_IDENTIFIER: ${{ vars.RDS_DB_INSTANCE_IDENTIFIER }}
+          DB_SUBNET_GROUP_NAME: ${{ vars.RDS_DB_SUBNET_GROUP_NAME }}
+          DB_VPC_SECURITY_GROUP_IDS: ${{ vars.RDS_DB_VPC_SECURITY_GROUP_IDS }}
+          DB_NAME: ${{ vars.RDS_DB_NAME || 'processador_diagramas' }}
+          DB_ENGINE_VERSION: ${{ vars.RDS_DB_ENGINE_VERSION }}
+          DB_INSTANCE_CLASS: ${{ vars.RDS_DB_INSTANCE_CLASS || 'db.t3.micro' }}
+          DB_ALLOCATED_STORAGE: ${{ vars.RDS_DB_ALLOCATED_STORAGE || '20' }}
+          DB_STORAGE_TYPE: ${{ vars.RDS_DB_STORAGE_TYPE || 'gp3' }}
+          DB_PORT: ${{ vars.RDS_DB_PORT || '5432' }}
+          DB_BACKUP_RETENTION_DAYS: ${{ vars.RDS_DB_BACKUP_RETENTION_DAYS || '1' }}
+          DB_PUBLICLY_ACCESSIBLE: ${{ vars.RDS_DB_PUBLICLY_ACCESSIBLE || 'false' }}
+          DB_MULTI_AZ: ${{ vars.RDS_DB_MULTI_AZ || 'false' }}
+          DB_AUTO_MINOR_VERSION_UPGRADE: ${{ vars.RDS_DB_AUTO_MINOR_VERSION_UPGRADE || 'false' }}
+          DB_MASTER_USERNAME: ${{ secrets.RDS_MASTER_USERNAME }}
+          DB_MASTER_PASSWORD: ${{ secrets.RDS_MASTER_PASSWORD }}
+        run: bash scripts/rds-manage.sh ensure
+
       - name: Generate kubeconfig
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
         run: aws eks update-kubeconfig --region "${{ env.AWS_REGION }}" --name "${{ env.EKS_CLUSTER_NAME }}"
@@ -92,6 +114,7 @@ jobs:
             --from-literal=ASPNETCORE_ENVIRONMENT="Production" \
             --from-literal=ASPNETCORE_URLS="http://+:8080" \
             --from-literal=ReportService__GetReportPathTemplate="/api/reports/{analysisId}" \
+            --from-literal=ReportService__UseMock="false" \
             --from-literal=UploadStorage__RootPath="/tmp/uploads" \
             -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
@@ -99,18 +122,34 @@ jobs:
         if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
         env:
           K8S_NAMESPACE: ${{ github.ref_name == 'master' && 'production' || 'homolog' }}
-          DEFAULT_CONNECTION: ${{ secrets.CONNECTIONSTRINGS__DEFAULTCONNECTION }}
+          RDS_ENDPOINT: ${{ steps.ensure-rds.outputs.endpoint }}
+          RDS_PORT: ${{ steps.ensure-rds.outputs.port }}
+          RDS_DB_NAME: ${{ steps.ensure-rds.outputs.db_name }}
+          RDS_MASTER_USERNAME: ${{ secrets.RDS_MASTER_USERNAME }}
+          RDS_MASTER_PASSWORD: ${{ secrets.RDS_MASTER_PASSWORD }}
+          FALLBACK_CONNECTION: ${{ secrets.CONNECTIONSTRINGS__DEFAULTCONNECTION }}
           AWS_REGION: ${{ env.AWS_REGION }}
           AWS_TOPIC_ARN: ${{ secrets.AWS__TOPICARN }}
           AWS_QUEUE_URL: ${{ secrets.AWS__QUEUEURL }}
           REPORT_BASE_URL: ${{ secrets.REPORTSERVICE__BASEURL }}
+          AUTH_CLIENT_API_KEY: ${{ secrets.AUTH__CLIENTAPIKEY }}
+          AUTH_INTERNAL_API_KEY: ${{ secrets.AUTH__INTERNALAPIKEY }}
         run: |
+          DEFAULT_CONNECTION="$FALLBACK_CONNECTION"
+
+          if [[ -n "$RDS_ENDPOINT" && -n "$RDS_PORT" && -n "$RDS_DB_NAME" && -n "$RDS_MASTER_USERNAME" && -n "$RDS_MASTER_PASSWORD" ]]; then
+            DEFAULT_CONNECTION="Host=$RDS_ENDPOINT;Port=$RDS_PORT;Database=$RDS_DB_NAME;Username=$RDS_MASTER_USERNAME;Password=$RDS_MASTER_PASSWORD;Ssl Mode=Require;Trust Server Certificate=true"
+          fi
+
           kubectl create secret generic ${{ env.APP_NAME }}-secrets \
             --from-literal=ConnectionStrings__DefaultConnection="$DEFAULT_CONNECTION" \
             --from-literal=Aws__Region="$AWS_REGION" \
             --from-literal=Aws__TopicArn="$AWS_TOPIC_ARN" \
             --from-literal=Aws__QueueUrl="$AWS_QUEUE_URL" \
             --from-literal=ReportService__BaseUrl="$REPORT_BASE_URL" \
+            --from-literal=Auth__HeaderName="X-Api-Key" \
+            --from-literal=Auth__ClientApiKey="$AUTH_CLIENT_API_KEY" \
+            --from-literal=Auth__InternalApiKey="$AUTH_INTERNAL_API_KEY" \
             -n "$K8S_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
       - name: Run database migrations
@@ -135,3 +174,32 @@ jobs:
           kubectl -n "$K8S_NAMESPACE" apply -f deploy/k8s/service.yaml
           sed "s|\${IMAGE_TAG}|${{ github.sha }}|g" deploy/k8s/deployment.yaml | kubectl -n "$K8S_NAMESPACE" apply -f -
           kubectl rollout status deployment/${{ env.APP_NAME }} -n "$K8S_NAMESPACE" --timeout=10m
+
+      - name: Smoke test API in EKS
+        if: github.event_name == 'push' && (github.ref_name == 'homolog' || github.ref_name == 'master')
+        env:
+          K8S_NAMESPACE: ${{ github.ref_name == 'master' && 'production' || 'homolog' }}
+          AUTH_CLIENT_API_KEY: ${{ secrets.AUTH__CLIENTAPIKEY }}
+        run: |
+          kubectl -n "$K8S_NAMESPACE" port-forward svc/${{ env.APP_NAME }} 18080:80 >/tmp/pf.log 2>&1 &
+          PF_PID=$!
+          trap 'kill $PF_PID >/dev/null 2>&1 || true' EXIT
+
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:18080/health >/tmp/health.out; then
+              break
+            fi
+            sleep 3
+          done
+
+          test -s /tmp/health.out
+          grep -Eqi "healthy|ok" /tmp/health.out
+
+          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "X-Api-Key: $AUTH_CLIENT_API_KEY" \
+            http://127.0.0.1:18080/api/diagrams/non-existent-id)
+
+          if [ "$STATUS_CODE" -ne 400 ] && [ "$STATUS_CODE" -ne 404 ]; then
+            echo "[ERROR] Endpoint protegido respondeu HTTP inesperado: $STATUS_CODE"
+            exit 1
+          fi
