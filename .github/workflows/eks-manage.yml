@@ -1,0 +1,50 @@
+name: Manage EKS Cluster
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Acao no EKS"
+        required: true
+        type: choice
+        default: status
+        options:
+          - status
+          - ensure
+          - pause
+          - resume
+          - delete
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'processador-diagramas-shared-eks' }}
+
+jobs:
+  manage-eks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"         >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> "$GITHUB_ENV"
+          echo "AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}"          >> "$GITHUB_ENV"
+          echo "AWS_DEFAULT_REGION=${{ env.AWS_REGION }}"                    >> "$GITHUB_ENV"
+
+      - name: Execute EKS action
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          EKS_CLUSTER_NAME: ${{ env.EKS_CLUSTER_NAME }}
+          EKS_NODEGROUP_NAME: ${{ vars.EKS_NODEGROUP_NAME || 'processador-diagramas-shared-eks-ng' }}
+          EKS_VERSION: ${{ vars.EKS_VERSION || '1.29' }}
+          EKS_NODE_INSTANCE_TYPE: ${{ vars.EKS_NODE_INSTANCE_TYPE || 't3.small' }}
+          EKS_NODE_DISK_SIZE: ${{ vars.EKS_NODE_DISK_SIZE || '20' }}
+          EKS_NODE_DESIRED: ${{ vars.EKS_NODE_DESIRED || '1' }}
+          EKS_NODE_MIN: ${{ vars.EKS_NODE_MIN || '1' }}
+          EKS_NODE_MAX: ${{ vars.EKS_NODE_MAX || '2' }}
+          EKS_CLUSTER_ROLE_ARN: ${{ vars.EKS_CLUSTER_ROLE_ARN }}
+          EKS_NODE_ROLE_ARN: ${{ vars.EKS_NODE_ROLE_ARN }}
+        run: bash scripts/eks-manage.sh "${{ github.event.inputs.action }}"

@@ -217,7 +217,7 @@ Observacao sobre `CONNECTIONSTRINGS__DEFAULTCONNECTION`:
 
 Variables recomendadas no GitHub (Repository Variables):
 - AWS_REGION
-- EKS_CLUSTER_NAME
+- EKS_CLUSTER_NAME (recomendado: processador-diagramas-shared-eks)
 - RDS_DB_INSTANCE_IDENTIFIER
 - RDS_DB_SUBNET_GROUP_NAME
 - RDS_DB_VPC_SECURITY_GROUP_IDS
@@ -243,6 +243,35 @@ Promocao esperada:
 - pull request para develop: valida build e testes
 - merge em homolog: publica imagem e faz deploy no namespace homolog
 - merge em master: publica imagem e faz deploy no namespace production
+
+## EKS compartilhado economico (AWS Academy)
+
+Objetivo: usar um cluster unico para os microservicos por ambiente e reduzir custo operacional.
+
+Nome recomendado do cluster para este projeto:
+- processador-diagramas-shared-eks
+
+Padrao de deploy recomendado:
+- 1 cluster EKS compartilhado por ambiente (ex.: homolog/producao)
+- Namespaces separados por ambiente e servicos
+- Cada microservico publica sua imagem e aplica seus manifests no namespace correto
+
+Como criar/gerenciar com este repositorio:
+- Script local: `scripts/eks-manage.sh`
+- Workflow manual: `Manage EKS Cluster` (`.github/workflows/eks-manage.yml`)
+
+Acoes disponiveis:
+- `ensure`: cria cluster e nodegroup se nao existirem
+- `status`: mostra status do cluster e escala do nodegroup
+- `pause`: escala nodegroup para 0 (economia de EC2)
+- `resume`: restaura escala minima do nodegroup
+- `delete`: remove nodegroup e cluster (maior economia)
+
+Estrategia de economia de credito (AWS Academy):
+- EKS nao possui stop/start nativo como RDS
+- `pause` economiza custo de EC2 (workers), mas o control plane do EKS continua cobrando
+- para economia maxima, use `delete` ao fim da sessao e `ensure` ao retomar
+- para economia com retomada rapida no mesmo dia, use `pause`/`resume`
 
 ## RDS PostgreSQL economico (AWS Academy)
 

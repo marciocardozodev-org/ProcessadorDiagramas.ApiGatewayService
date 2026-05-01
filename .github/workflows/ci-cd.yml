@@ -11,7 +11,7 @@ env:
   IMAGE_NAME: marciocardozodev/processador-diagramas-apigatewayservice
   APP_NAME: processador-diagramas-apigatewayservice
   AWS_REGION: us-east-1
-  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'processadordiagramas-apigateway' }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME || 'processador-diagramas-shared-eks' }}
 
 jobs:
   build-test-deploy:
