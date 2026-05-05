@@ -76,6 +76,11 @@ public sealed class AwsMessageBus : IMessageBus
                 continue;
             }
 
+            if (response.Messages is null || response.Messages.Count == 0)
+            {
+                continue;
+            }
+
             foreach (var sqsMessage in response.Messages)
             {
                 try
