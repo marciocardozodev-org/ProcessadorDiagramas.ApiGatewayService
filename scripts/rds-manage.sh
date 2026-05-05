@@ -88,9 +88,23 @@ wait_available() {
 
 wait_stopped() {
   echo "[INFO] Aguardando instancia '$DB_INSTANCE_IDENTIFIER' parar..."
-  aws rds wait db-instance-stopped \
-    --region "$AWS_REGION" \
-    --db-instance-identifier "$DB_INSTANCE_IDENTIFIER"
+  local status
+  local attempts=0
+  local max_attempts=120
+
+  while (( attempts < max_attempts )); do
+    status="$(db_status)"
+    if [[ "$status" == "stopped" ]]; then
+      return
+    fi
+
+    attempts=$((attempts + 1))
+    echo "[INFO] Status atual do RDS: $status (tentativa $attempts/$max_attempts)"
+    sleep 15
+  done
+
+  echo "[ERROR] Timeout aguardando RDS parar. Status final: $status" >&2
+  exit 1
 }
 
 create_db() {

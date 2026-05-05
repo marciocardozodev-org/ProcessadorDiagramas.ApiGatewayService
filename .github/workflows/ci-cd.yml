@@ -154,6 +154,9 @@ jobs:
           RDS_MASTER_PASSWORD: ${{ secrets.RDS_MASTER_PASSWORD }}
           FALLBACK_CONNECTION: ${{ secrets.CONNECTIONSTRINGS__DEFAULTCONNECTION }}
           AWS_REGION: ${{ env.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
           AWS_TOPIC_ARN: ${{ secrets.AWS__TOPICARN }}
           AWS_QUEUE_URL: ${{ secrets.AWS__QUEUEURL }}
           REPORT_BASE_URL: ${{ secrets.REPORTSERVICE__BASEURL }}
@@ -169,6 +172,9 @@ jobs:
           kubectl create secret generic ${{ env.APP_NAME }}-secrets \
             --from-literal=ConnectionStrings__DefaultConnection="$DEFAULT_CONNECTION" \
             --from-literal=Aws__Region="$AWS_REGION" \
+            --from-literal=AWS_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" \
+            --from-literal=AWS_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY" \
+            --from-literal=AWS_SESSION_TOKEN="$AWS_SESSION_TOKEN" \
             --from-literal=Aws__TopicArn="$AWS_TOPIC_ARN" \
             --from-literal=Aws__QueueUrl="$AWS_QUEUE_URL" \
             --from-literal=ReportService__BaseUrl="$REPORT_BASE_URL" \

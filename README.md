@@ -69,43 +69,20 @@ docker compose up postgres -d
 
 # 2. Configure as variaveis (ou use appsettings.Development.json)
 export ConnectionStrings__DefaultConnection="Host=localhost;Port=5432;Database=processador_diagramas_dev;Username=postgres;Password=postgres"
-
 # 3. Aplique as migrations
 cd src/ProcessadorDiagramas.APIGatewayService
-dotnet ef database update
-
-# 4. Execute a API
 dotnet run
 ```
 
-Para concluir o fluxo local sem depender do servico real de processamento, use a simulacao interna em Development:
-
 ```bash
-# 1. Criar solicitacao
-curl -X POST "http://localhost:5000/api/diagrams" \
-  -H "X-Api-Key: dev-client-key" \
-  -F "file=@./diagram.png;type=image/png"
-
 # 2. Simular retorno do servico interno
 curl -X POST "http://localhost:5000/internal/testing/diagram-processed" \
-  -H "Content-Type: application/json" \
-  -H "X-Api-Key: dev-internal-key" \
-  -d '{"diagramRequestId":"SEU_ID","isSuccess":true,"resultUrl":"https://reports.local/SEU_ID"}'
-
 # 3. Consultar status e relatorio
 curl -H "X-Api-Key: dev-client-key" "http://localhost:5000/api/diagrams/SEU_ID"
 curl -H "X-Api-Key: dev-client-key" "http://localhost:5000/api/diagrams/SEU_ID/report"
 ```
 
 ---
-
-## Testar SNS/SQS localmente (com LocalStack)
-
-Para testar o fluxo completo de publicacao de eventos (SNS) e consumo (SQS) localmente:
-
-### 1. Subir docker-compose com AWS Services habilitados
-
-```bash
 # Subir toda a infraestrutura (PostgreSQL, LocalStack, inicializar SNS/SQS)
 ENABLE_AWS_SERVICES=true docker compose up --build
 
@@ -115,14 +92,9 @@ bash scripts/init-localstack.sh
 ```
 
 ### 2. Validar que SNS/SQS estao funcionando
-
-```bash
 # Testa conectividade e cria topico/fila se nao existirem
 bash scripts/test-sqs-sns-local.sh
-```
-
 Esperado: **All tests passed!**
-
 ### 3. Testar end-to-end: enviar diagrama e monitorar fila
 
 ```bash
@@ -130,13 +102,6 @@ Esperado: **All tests passed!**
 # Garanta que appsettings.Development.json tem EnableAwsServices=true
 
 # Envia requisicao para criar diagrama e monitora fila SQS
-bash scripts/send-diagram-request.sh
-```
-
-Esperado: **End-to-End Test PASSED!**
-
-Fluxo validado:
-1. Cliente faz POST `/api/diagrams` com arquivo
 2. API persiste em banco + publica evento no SNS (via padrão Outbox)
 3. SNS roteia para fila SQS
 4. InboxConsumer consome mensagem de SQS
@@ -204,7 +169,6 @@ Secrets esperadas no GitHub:
 - AWS_SECRET_ACCESS_KEY
 - AWS_SESSION_TOKEN
 - AWS__TOPICARN
-- AWS__QUEUEURL
 - REPORTSERVICE__BASEURL
 - AUTH__CLIENTAPIKEY
 - AUTH__INTERNALAPIKEY
@@ -228,7 +192,6 @@ Variables recomendadas no GitHub (Repository Variables):
 - RDS_DB_STORAGE_TYPE (opcional, default: gp3)
 - RDS_DB_PORT (opcional, default: 5432)
 - RDS_DB_BACKUP_RETENTION_DAYS (opcional, default: 1)
-- RDS_DB_PUBLICLY_ACCESSIBLE (opcional, default: false)
 - RDS_DB_MULTI_AZ (opcional, default: false)
 - RDS_DB_AUTO_MINOR_VERSION_UPGRADE (opcional, default: false)
 
@@ -253,8 +216,6 @@ Nome recomendado do cluster para este projeto:
 
 Padrao de deploy recomendado:
 - 1 cluster EKS compartilhado por ambiente (ex.: homolog/producao)
-- Namespaces separados por ambiente e servicos
-- Cada microservico publica sua imagem e aplica seus manifests no namespace correto
 
 Como criar/gerenciar com este repositorio:
 - Script local: `scripts/eks-manage.sh`
@@ -272,6 +233,24 @@ Estrategia de economia de credito (AWS Academy):
 - `pause` economiza custo de EC2 (workers), mas o control plane do EKS continua cobrando
 - para economia maxima, use `delete` ao fim da sessao e `ensure` ao retomar
 - para economia com retomada rapida no mesmo dia, use `pause`/`resume`
+
+Rotina diaria pronta (scripts auxiliares):
+- Fim do dia (economia maxima): `scripts/day-end-max-economy.sh`
+  - remove EKS (cluster + nodegroup)
+  - para o RDS
+- Inicio do dia (restaurar ambiente): `scripts/day-start-restore.sh`
+  - recria/garante EKS
+  - inicia/garante RDS
+  - atualiza kubeconfig local
+
+Exemplo de uso:
+```bash
+# Economia maxima ao encerrar o trabalho
+AWS_REGION=us-east-1 ./scripts/day-end-max-economy.sh
+
+# Restaurar no proximo dia
+AWS_REGION=us-east-1 ./scripts/day-start-restore.sh
+```
 
 ## RDS PostgreSQL economico (AWS Academy)
 
