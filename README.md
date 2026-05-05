@@ -234,6 +234,24 @@ Estrategia de economia de credito (AWS Academy):
 - para economia maxima, use `delete` ao fim da sessao e `ensure` ao retomar
 - para economia com retomada rapida no mesmo dia, use `pause`/`resume`
 
+Rotina diaria pronta (scripts auxiliares):
+- Fim do dia (economia maxima): `scripts/day-end-max-economy.sh`
+  - remove EKS (cluster + nodegroup)
+  - para o RDS
+- Inicio do dia (restaurar ambiente): `scripts/day-start-restore.sh`
+  - recria/garante EKS
+  - inicia/garante RDS
+  - atualiza kubeconfig local
+
+Exemplo de uso:
+```bash
+# Economia maxima ao encerrar o trabalho
+AWS_REGION=us-east-1 ./scripts/day-end-max-economy.sh
+
+# Restaurar no proximo dia
+AWS_REGION=us-east-1 ./scripts/day-start-restore.sh
+```
+
 ## RDS PostgreSQL economico (AWS Academy)
 
 Objetivo: criar o banco com custo minimo e ligar/desligar por demanda durante os estudos.
