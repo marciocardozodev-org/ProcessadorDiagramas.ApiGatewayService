@@ -1,18 +1,23 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using ProcessadorDiagramas.APIGatewayService.API.DTOs;
 using ProcessadorDiagramas.APIGatewayService.Application.Commands.CreateDiagramRequest;
 using ProcessadorDiagramas.APIGatewayService.Application.Interfaces;
 using ProcessadorDiagramas.APIGatewayService.Application.Queries.GetAnalysisReport;
 using ProcessadorDiagramas.APIGatewayService.Application.Queries.GetDiagramRequest;
+using ProcessadorDiagramas.APIGatewayService.Infrastructure.Auth;
 
 namespace ProcessadorDiagramas.APIGatewayService.API.Controllers;
 
 [ApiController]
 [Route("api/diagrams")]
 [Produces("application/json")]
+[Authorize(Policy = AuthorizationPolicies.ClientAccess)]
 public sealed class DiagramRequestsController : ControllerBase
 {
     private const long MaxFileSizeBytes = 10 * 1024 * 1024;
+    private const int MaxNameLength = 200;
+    private const int MaxDescriptionLength = 1000;
 
     private readonly CreateDiagramRequestCommandHandler _createHandler;
     private readonly GetDiagramRequestQueryHandler _getHandler;
@@ -60,6 +65,12 @@ public sealed class DiagramRequestsController : ControllerBase
 
         if (!IsSupportedContentType(dto.File.ContentType))
             return BadRequest(new { message = "Unsupported file type. Allowed types: image/* or application/pdf." });
+
+        if (!string.IsNullOrWhiteSpace(dto.Name) && dto.Name.Length > MaxNameLength)
+            return BadRequest(new { message = $"Field 'name' exceeds the maximum size of {MaxNameLength} characters." });
+
+        if (!string.IsNullOrWhiteSpace(dto.Description) && dto.Description.Length > MaxDescriptionLength)
+            return BadRequest(new { message = $"Field 'description' exceeds the maximum size of {MaxDescriptionLength} characters." });
 
         await using var stream = dto.File.OpenReadStream();
 

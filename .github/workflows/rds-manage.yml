@@ -1,0 +1,53 @@
+name: Manage RDS PostgreSQL
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Acao no banco RDS"
+        required: true
+        type: choice
+        default: status
+        options:
+          - status
+          - start
+          - stop
+          - ensure
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  manage-rds:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}"         >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> "$GITHUB_ENV"
+          echo "AWS_SESSION_TOKEN=${{ secrets.AWS_SESSION_TOKEN }}"          >> "$GITHUB_ENV"
+          echo "AWS_DEFAULT_REGION=${{ env.AWS_REGION }}"                    >> "$GITHUB_ENV"
+
+      - name: Execute RDS action
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+          DB_INSTANCE_IDENTIFIER: ${{ vars.RDS_DB_INSTANCE_IDENTIFIER }}
+          DB_SUBNET_GROUP_NAME: ${{ vars.RDS_DB_SUBNET_GROUP_NAME }}
+          DB_VPC_SECURITY_GROUP_IDS: ${{ vars.RDS_DB_VPC_SECURITY_GROUP_IDS }}
+          DB_NAME: ${{ vars.RDS_DB_NAME || 'processador_diagramas' }}
+          DB_ENGINE_VERSION: ${{ vars.RDS_DB_ENGINE_VERSION }}
+          DB_INSTANCE_CLASS: ${{ vars.RDS_DB_INSTANCE_CLASS || 'db.t3.micro' }}
+          DB_ALLOCATED_STORAGE: ${{ vars.RDS_DB_ALLOCATED_STORAGE || '20' }}
+          DB_STORAGE_TYPE: ${{ vars.RDS_DB_STORAGE_TYPE || 'gp3' }}
+          DB_PORT: ${{ vars.RDS_DB_PORT || '5432' }}
+          DB_BACKUP_RETENTION_DAYS: ${{ vars.RDS_DB_BACKUP_RETENTION_DAYS || '1' }}
+          DB_PUBLICLY_ACCESSIBLE: ${{ vars.RDS_DB_PUBLICLY_ACCESSIBLE || 'false' }}
+          DB_MULTI_AZ: ${{ vars.RDS_DB_MULTI_AZ || 'false' }}
+          DB_AUTO_MINOR_VERSION_UPGRADE: ${{ vars.RDS_DB_AUTO_MINOR_VERSION_UPGRADE || 'false' }}
+          DB_MASTER_USERNAME: ${{ secrets.RDS_MASTER_USERNAME }}
+          DB_MASTER_PASSWORD: ${{ secrets.RDS_MASTER_PASSWORD }}
+        run: bash scripts/rds-manage.sh "${{ github.event.inputs.action }}"

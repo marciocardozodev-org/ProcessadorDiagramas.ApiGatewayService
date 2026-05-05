@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: processador-diagramas-apigatewayservice
+  labels:
+    app: processador-diagramas-apigatewayservice
+spec:
+  type: ClusterIP
+  selector:
+    app: processador-diagramas-apigatewayservice
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

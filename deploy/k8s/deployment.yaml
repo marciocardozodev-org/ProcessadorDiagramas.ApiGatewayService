@@ -1,0 +1,52 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: processador-diagramas-apigatewayservice
+  labels:
+    app: processador-diagramas-apigatewayservice
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: processador-diagramas-apigatewayservice
+  template:
+    metadata:
+      labels:
+        app: processador-diagramas-apigatewayservice
+    spec:
+      containers:
+        - name: processador-diagramas-apigatewayservice
+          image: marciocardozodev/processador-diagramas-apigatewayservice:${IMAGE_TAG}
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: processador-diagramas-apigatewayservice-config
+            - secretRef:
+                name: processador-diagramas-apigatewayservice-secrets
+          volumeMounts:
+            - name: uploads
+              mountPath: /tmp/uploads
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: uploads
+          emptyDir: {}
