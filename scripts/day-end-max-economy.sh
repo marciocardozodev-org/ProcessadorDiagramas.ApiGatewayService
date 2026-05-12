@@ -7,6 +7,8 @@ EKS_CLUSTER_NAME="${EKS_CLUSTER_NAME:-processador-diagramas-shared-eks}"
 EKS_NODEGROUP_NAME="${EKS_NODEGROUP_NAME:-processador-diagramas-shared-eks-ng}"
 DB_INSTANCE_IDENTIFIER="${DB_INSTANCE_IDENTIFIER:-processador-diagramas-pg-hml}"
 
+source scripts/aws-managed-resources.sh
+
 require_aws_auth() {
   if ! aws sts get-caller-identity --output text >/dev/null 2>&1; then
     echo "[ERROR] Credenciais AWS invalidas/expiradas. Atualize AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY e AWS_SESSION_TOKEN." >&2
@@ -20,6 +22,8 @@ echo "[INFO] Cluster EKS: $EKS_CLUSTER_NAME"
 echo "[INFO] Nodegroup EKS: $EKS_NODEGROUP_NAME"
 echo "[INFO] RDS: $DB_INSTANCE_IDENTIFIER"
 
+print_managed_resource_inventory
+
 require_aws_auth
 
 # 1) Remove cluster EKS (maior economia para overnight)
@@ -28,9 +32,13 @@ EKS_CLUSTER_NAME="$EKS_CLUSTER_NAME" \
 EKS_NODEGROUP_NAME="$EKS_NODEGROUP_NAME" \
 bash scripts/eks-manage.sh delete
 
-# 2) Para o RDS (economiza compute)
+# 2) Remove recursos compartilhados de mensageria e de outros microservicos
+AWS_REGION="$AWS_REGION" \
+delete_managed_messaging_resources
+
+# 3) Para o RDS (economiza compute)
 AWS_REGION="$AWS_REGION" \
 DB_INSTANCE_IDENTIFIER="$DB_INSTANCE_IDENTIFIER" \
 bash scripts/rds-manage.sh stop
 
-echo "[INFO] Economia maxima aplicada: EKS removido e RDS parado."
+echo "[INFO] Economia maxima aplicada: EKS removido, mensageria limpa e RDS parado."
