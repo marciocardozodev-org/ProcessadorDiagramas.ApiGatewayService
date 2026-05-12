@@ -9,30 +9,24 @@ using ProcessadorDiagramas.APIGatewayService.Infrastructure.Auth;
 namespace ProcessadorDiagramas.APIGatewayService.API.Controllers;
 
 [ApiController]
-[Route("internal/testing")]
-[ApiExplorerSettings(IgnoreApi = true)]
+[Route("internal/diagram-events")]
+[Produces("application/json")]
 [Authorize(Policy = AuthorizationPolicies.InternalAccess)]
-public sealed class InternalTestingController : ControllerBase
+public sealed class InternalDiagramEventsController : ControllerBase
 {
     private readonly DiagramProcessedEventHandler _diagramProcessedEventHandler;
-    private readonly IWebHostEnvironment _environment;
 
-    public InternalTestingController(
-        DiagramProcessedEventHandler diagramProcessedEventHandler,
-        IWebHostEnvironment environment)
+    public InternalDiagramEventsController(DiagramProcessedEventHandler diagramProcessedEventHandler)
     {
         _diagramProcessedEventHandler = diagramProcessedEventHandler;
-        _environment = environment;
     }
 
-    [HttpPost("diagram-processed")]
-    public async Task<IActionResult> SimulateDiagramProcessed(
+    [HttpPost("processed")]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    public async Task<IActionResult> DiagramProcessed(
         [FromBody] SimulateDiagramProcessedRequestDto dto,
         CancellationToken cancellationToken)
     {
-        if (!_environment.IsDevelopment())
-            return NotFound();
-
         var processedEvent = new DiagramProcessedEvent(
             dto.DiagramRequestId,
             dto.IsSuccess,
@@ -43,6 +37,11 @@ public sealed class InternalTestingController : ControllerBase
         var payload = JsonSerializer.Serialize(processedEvent);
         await _diagramProcessedEventHandler.HandleAsync(payload, cancellationToken);
 
-        return Accepted(new { dto.DiagramRequestId, dto.IsSuccess });
+        return Accepted(new
+        {
+            dto.DiagramRequestId,
+            dto.IsSuccess,
+            ProcessedAt = processedEvent.ProcessedAt
+        });
     }
 }

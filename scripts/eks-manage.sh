@@ -61,6 +61,28 @@ nodegroup_exists() {
     --output text >/dev/null 2>&1
 }
 
+get_nodegroup_status() {
+  aws eks describe-nodegroup \
+    --region "$AWS_REGION" \
+    --cluster-name "$EKS_CLUSTER_NAME" \
+    --nodegroup-name "$EKS_NODEGROUP_NAME" \
+    --query 'nodegroup.status' \
+    --output text
+}
+
+print_nodegroup_failure_details() {
+  local issues_json
+  issues_json="$(aws eks describe-nodegroup \
+    --region "$AWS_REGION" \
+    --cluster-name "$EKS_CLUSTER_NAME" \
+    --nodegroup-name "$EKS_NODEGROUP_NAME" \
+    --query 'nodegroup.health.issues[].{code:code,message:message,resourceIds:resourceIds}' \
+    --output json 2>/dev/null || echo '[]')"
+
+  echo "[ERROR] Nodegroup '$EKS_NODEGROUP_NAME' entrou em falha." >&2
+  echo "[ERROR] Diagnostico AWS: $issues_json" >&2
+}
+
 wait_cluster_active() {
   echo "[INFO] Aguardando cluster '$EKS_CLUSTER_NAME' ficar ACTIVE..."
   aws eks wait cluster-active --region "$AWS_REGION" --name "$EKS_CLUSTER_NAME"
@@ -86,10 +108,19 @@ wait_cluster_visible() {
 
 wait_nodegroup_active() {
   echo "[INFO] Aguardando nodegroup '$EKS_NODEGROUP_NAME' ficar ACTIVE..."
-  aws eks wait nodegroup-active \
+  if ! aws eks wait nodegroup-active \
     --region "$AWS_REGION" \
     --cluster-name "$EKS_CLUSTER_NAME" \
-    --nodegroup-name "$EKS_NODEGROUP_NAME"
+    --nodegroup-name "$EKS_NODEGROUP_NAME"; then
+    local status
+    status="$(get_nodegroup_status 2>/dev/null || echo unknown)"
+
+    if [[ "$status" == "CREATE_FAILED" || "$status" == "DEGRADED" ]]; then
+      print_nodegroup_failure_details
+    fi
+
+    return 1
+  fi
 }
 
 wait_nodegroup_visible() {
@@ -230,7 +261,9 @@ ensure_cluster() {
     create_nodegroup
   else
     echo "[INFO] Nodegroup '$EKS_NODEGROUP_NAME' ja existe."
-    wait_nodegroup_active
+    if ! wait_nodegroup_active; then
+      recreate_failed_nodegroup
+    fi
   fi
 
   output_status
@@ -290,6 +323,34 @@ delete_cluster() {
   wait_cluster_deleted
 
   echo "[INFO] Cluster removido com sucesso."
+}
+
+delete_nodegroup_only() {
+  if ! nodegroup_exists; then
+    echo "[INFO] Nodegroup '$EKS_NODEGROUP_NAME' nao existe. Nada para remover."
+    return
+  fi
+
+  echo "[INFO] Removendo nodegroup '$EKS_NODEGROUP_NAME'..."
+  aws eks delete-nodegroup \
+    --region "$AWS_REGION" \
+    --cluster-name "$EKS_CLUSTER_NAME" \
+    --nodegroup-name "$EKS_NODEGROUP_NAME" >/dev/null
+  wait_nodegroup_deleted
+}
+
+recreate_failed_nodegroup() {
+  local status
+  status="$(get_nodegroup_status 2>/dev/null || echo unknown)"
+
+  if [[ "$status" != "CREATE_FAILED" ]]; then
+    return 1
+  fi
+
+  print_nodegroup_failure_details
+  echo "[WARN] Nodegroup '$EKS_NODEGROUP_NAME' falhou na criacao. Removendo e tentando recriar uma vez..." >&2
+  delete_nodegroup_only
+  create_nodegroup
 }
 
 output_status() {

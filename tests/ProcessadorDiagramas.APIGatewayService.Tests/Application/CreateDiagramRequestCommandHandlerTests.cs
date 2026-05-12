@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using ProcessadorDiagramas.APIGatewayService.Application.Commands.CreateDiagramRequest;
 using ProcessadorDiagramas.APIGatewayService.Application.Interfaces;
@@ -31,10 +32,17 @@ public sealed class CreateDiagramRequestCommandHandlerTests
 
         var outboxPublisher = new OutboxPublisher(_outboxRepositoryMock.Object);
 
+        var orchestrationMock = new Mock<IUploadOrquestracaoServiceClient>();
+        orchestrationMock
+            .Setup(c => c.RegisterUploadAsync(It.IsAny<RegisterUploadRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((OrchestrationProcessDto?)null);
+
         _handler = new CreateDiagramRequestCommandHandler(
             _repositoryMock.Object,
             outboxPublisher,
-            _dbContext);
+            _dbContext,
+            orchestrationMock.Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<CreateDiagramRequestCommandHandler>.Instance);
     }
 
     [Fact]

@@ -13,6 +13,7 @@ using ProcessadorDiagramas.APIGatewayService.EventHandlers;
 using ProcessadorDiagramas.APIGatewayService.Inbox;
 using ProcessadorDiagramas.APIGatewayService.Infrastructure.Auth;
 using ProcessadorDiagramas.APIGatewayService.Infrastructure.Clients.Reports;
+using ProcessadorDiagramas.APIGatewayService.Infrastructure.Clients.UploadOrquestracao;
 using ProcessadorDiagramas.APIGatewayService.Infrastructure.Data;
 using ProcessadorDiagramas.APIGatewayService.Infrastructure.Data.Repositories;
 using ProcessadorDiagramas.APIGatewayService.Infrastructure.Messaging;
@@ -81,6 +82,27 @@ else
     {
         var settings = serviceProvider
             .GetRequiredService<Microsoft.Extensions.Options.IOptions<ReportServiceSettings>>()
+            .Value;
+
+        if (Uri.TryCreate(settings.BaseUrl, UriKind.Absolute, out var baseUri))
+            httpClient.BaseAddress = baseUri;
+    });
+}
+
+// Preferred source of truth for upload registration and status: UploadOrquestracaoService.
+// When UseMock=true (dev/test), falls back to local DB transparently.
+builder.Services.Configure<UploadOrquestracaoServiceSettings>(builder.Configuration.GetSection("UploadOrquestracaoService"));
+var orchSettings = builder.Configuration.GetSection("UploadOrquestracaoService").Get<UploadOrquestracaoServiceSettings>() ?? new UploadOrquestracaoServiceSettings();
+if (orchSettings.UseMock)
+{
+    builder.Services.AddScoped<IUploadOrquestracaoServiceClient, MockUploadOrquestracaoServiceClient>();
+}
+else
+{
+    builder.Services.AddHttpClient<IUploadOrquestracaoServiceClient, HttpUploadOrquestracaoServiceClient>((serviceProvider, httpClient) =>
+    {
+        var settings = serviceProvider
+            .GetRequiredService<Microsoft.Extensions.Options.IOptions<UploadOrquestracaoServiceSettings>>()
             .Value;
 
         if (Uri.TryCreate(settings.BaseUrl, UriKind.Absolute, out var baseUri))

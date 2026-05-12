@@ -19,6 +19,8 @@ using ProcessadorDiagramas.APIGatewayService.Domain.Interfaces;
 using ProcessadorDiagramas.APIGatewayService.Infrastructure.Data.Repositories;
 using ProcessadorDiagramas.APIGatewayService.Infrastructure.Storage;
 
+using static ProcessadorDiagramas.APIGatewayService.Tests.API.DiagramRequestsControllerTests.TestHelpers;
+
 namespace ProcessadorDiagramas.APIGatewayService.Tests.API;
 
 public sealed class DiagramRequestsControllerTests
@@ -51,12 +53,15 @@ public sealed class DiagramRequestsControllerTests
                 "image/png"));
 
         using var dbContext = BuildInMemoryDbContext();
+        var orchMock = BuildOrchestrationMock();
         var createHandler = new CreateDiagramRequestCommandHandler(
             repositoryMock.Object,
             new OutboxPublisher(outboxRepositoryMock.Object),
-            dbContext);
+            dbContext,
+            orchMock,
+            NullLogger<CreateDiagramRequestCommandHandler>.Instance);
 
-        var statusHandler = new GetDiagramRequestQueryHandler(repositoryMock.Object);
+        var statusHandler = new GetDiagramRequestQueryHandler(repositoryMock.Object, orchMock);
         var reportHandler = new GetAnalysisReportQueryHandler(repositoryMock.Object, reportClientMock.Object);
 
         var controller = new DiagramRequestsController(
@@ -226,11 +231,14 @@ public sealed class DiagramRequestsControllerTests
             var fileStorage = new LocalDiagramFileStorage(
                 Options.Create(new UploadStorageSettings { RootPath = uploadRoot }),
                 NullLogger<LocalDiagramFileStorage>.Instance);
+            var orchMock = BuildOrchestrationMock();
             var createHandler = new CreateDiagramRequestCommandHandler(
                 repository,
                 new OutboxPublisher(outboxRepository),
-                dbContext);
-            var statusHandler = new GetDiagramRequestQueryHandler(repository);
+                dbContext,
+                orchMock,
+                NullLogger<CreateDiagramRequestCommandHandler>.Instance);
+            var statusHandler = new GetDiagramRequestQueryHandler(repository, orchMock);
             var reportHandler = new GetAnalysisReportQueryHandler(repository, Mock.Of<IReportServiceClient>());
             var controller = new DiagramRequestsController(createHandler, statusHandler, reportHandler, fileStorage);
 
@@ -376,7 +384,8 @@ public sealed class DiagramRequestsControllerTests
         IReportServiceClient reportServiceClient,
         IDiagramFileStorage fileStorage)
     {
-        var statusHandler = new GetDiagramRequestQueryHandler(repository);
+        var orchMock = BuildOrchestrationMock();
+        var statusHandler = new GetDiagramRequestQueryHandler(repository, orchMock);
         var reportHandler = new GetAnalysisReportQueryHandler(repository, reportServiceClient);
 
         return new DiagramRequestsController(null!, statusHandler, reportHandler, fileStorage);
@@ -389,5 +398,19 @@ public sealed class DiagramRequestsControllerTests
             .Options;
 
         return new AppDbContext(options);
+    }
+
+    internal static class TestHelpers
+    {
+        /// <summary>Returns a mock orchestration client that always returns null (uses local DB fallback).</summary>
+        internal static IUploadOrquestracaoServiceClient BuildOrchestrationMock()
+        {
+            var mock = new Mock<IUploadOrquestracaoServiceClient>();
+            mock.Setup(c => c.GetProcessStatusAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((OrchestrationProcessDto?)null);
+            mock.Setup(c => c.RegisterUploadAsync(It.IsAny<RegisterUploadRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((OrchestrationProcessDto?)null);
+            return mock.Object;
+        }
     }
 }

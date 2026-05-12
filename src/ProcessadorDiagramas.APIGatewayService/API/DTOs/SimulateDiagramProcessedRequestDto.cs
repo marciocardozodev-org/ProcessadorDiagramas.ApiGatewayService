@@ -9,6 +9,8 @@ public sealed class SimulateDiagramProcessedRequestDto
 
     public bool IsSuccess { get; init; }
 
+    public DateTime? ProcessedAt { get; init; }
+
     [MaxLength(2048)]
     public string? ResultUrl { get; init; }
 
